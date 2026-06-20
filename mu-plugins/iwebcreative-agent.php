@@ -123,33 +123,35 @@ function iweb_log_security_event( $event_type, $severity, $message ) {
 
 // A. Brute Force : Échecs de connexion
 add_action( 'wp_login_failed', function( $username ) {
-    iweb_log_security_event( 'failed_login', 'high', "Échec de connexion wp-admin pour : {$username}" );
+    iweb_log_security_event( 'failed_login', 'high', "Echec de connexion wp-admin pour : {$username}" );
 } );
 
 // B. Backdoor : Création ou modification d'un compte avec droits d'Administrateur
 add_action( 'set_user_role', function( $user_id, $role, $old_roles ) {
     if ( $role === 'administrator' ) {
         $user = get_userdata( $user_id );
-        iweb_log_security_event( 'admin_privilege_granted', 'critical', "Droits d'administrateur accordés à l'utilisateur : {$user->user_login}" );
+        iweb_log_security_event( 'admin_privilege_granted', 'critical', "Droits d'administrateur accordes a l'utilisateur : {$user->user_login}" );
     }
 }, 10, 3 );
 
 // C. Sabotage : Désactivation d'un plugin (ex: un pirate désactive Wordfence)
 add_action( 'deactivated_plugin', function( $plugin, $network_activation ) {
-    iweb_log_security_event( 'plugin_deactivated', 'medium', "Extension désactivée : {$plugin}" );
+    iweb_log_security_event( 'plugin_deactivated', 'medium', "Extension desactivee : {$plugin}" );
 }, 10, 2 );
 
 // D. Détournement : Modification de l'email d'administration global
 add_action( 'update_option_admin_email', function( $old_value, $value ) {
-    iweb_log_security_event( 'admin_email_changed', 'critical', "L'email d'administration global a été changé de {$old_value} à {$value}" );
+    iweb_log_security_event( 'admin_email_changed', 'critical', "L'email d'administration global a ete change de {$old_value} a {$value}" );
 }, 10, 2 );
 
 // E. Altération : Changement du thème actif
 add_action( 'switch_theme', function( $new_name, $new_theme ) {
-    iweb_log_security_event( 'theme_switched', 'high', "Le thème du site a été remplacé par : {$new_name}" );
+    iweb_log_security_event( 'theme_switched', 'high', "Le theme du site a ete remplace par : {$new_name}" );
 }, 10, 2 );
 
 // F. Attaque ciblée : Réinitialisation de mot de passe réussie
 add_action( 'after_password_reset', function( $user, $new_pass ) {
-    iweb_log_security_event( 'password_reset', 'medium', "Le mot de passe de l'utilisateur {$user->user_login} a été réinitialisé." );
+    iweb_log_security_event( 'password_reset', 'medium', "Le mot de passe de l'utilisateur {$user->user_login} a ete reinitialise." );
 }, 10, 2 );
+
+
