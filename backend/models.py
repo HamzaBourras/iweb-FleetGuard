@@ -1,0 +1,67 @@
+import os
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from cryptography.fernet import Fernet
+
+# On importe l'objet Base que nous avons préparé dans main.py
+from main import Base
+
+# 1. Configuration de la clé maîtresse via l'environnement
+# lit la clé qui est sur le fichier .env 
+import os
+raw_key = os.getenv("ENCRYPTION_KEY")
+if not raw_key:
+    raise ValueError("Alerte Sécurité : La clé ENCRYPTION_KEY est introuvable dans l'environnement !")
+
+SECRET_ENCRYPTION_KEY = raw_key.encode('utf-8')
+fernet = Fernet(SECRET_ENCRYPTION_KEY)
+
+# 2. Le Moteur de Chiffrement Automatique (Type personnalisé)
+class EncryptedString(TypeDecorator):
+    """
+    Cette colonne intelligente va chiffrer la donnée avant de l'écrire dans PostgreSQL,
+    et la déchiffrer automatiquement quand Python la lira.
+    """
+    impl = String
+
+    def process_bind_param(self, value, dialect):
+        # Action AVANT l'insertion dans la base de données : on chiffre !
+        if value is not None:
+            return fernet.encrypt(value.encode('utf-8')).decode('utf-8')
+        return value
+
+    def process_result_value(self, value, dialect):
+        # Action APRÈS la lecture depuis la base de données : on déchiffre !
+        if value is not None:
+            return fernet.decrypt(value.encode('utf-8')).decode('utf-8')
+        return value
+
+# 3. Tes Modèles de Données
+class ClientSite(Base):
+    __tablename__ = "client_sites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    url = Column(String, unique=True, index=True, nullable=False)
+    
+    # 🔴 MAGIE ICI : On utilise notre nouveau type EncryptedString au lieu de String !
+    secret_token = Column(EncryptedString, nullable=False) 
+    
+    site_name = Column(String)
+
+    alerts = relationship("SecurityAlert", back_populates="site")
+
+
+class SecurityAlert(Base):
+    __tablename__ = "security_alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    site_id = Column(Integer, ForeignKey("client_sites.id"), nullable=False) 
+    
+    event_type = Column(String, index=True) 
+    severity = Column(String)               
+    message = Column(String)
+    ip_address = Column(String)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    site = relationship("ClientSite", back_populates="alerts")

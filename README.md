@@ -10,8 +10,39 @@
 Ce projet permet de passer d'une sécurité réactive (site par site) à une posture proactive et centralisée, garantissant l'intégrité des données clients et la réputation de l'agence.
 
 ---
+### ⚙️ Installation & Démarrage rapide
 
-## 🏗️ Architecture du Projet
+1. **Cloner le dépôt :**
+   
+  ```bash
+   git clone [https://github.com/votre-compte/iweb-fleetguard.git](https://github.com/votre-compte/iweb-fleetguard.git)
+   cd iweb-fleetguard
+
+```
+
+2. **Configuration de la sécurité (Variables d'environnement) :**
+Pour des raisons de sécurité (Security by Design), la clé de chiffrement maîtresse n'est pas versionnée. Avant de lancer l'infrastructure, vous devez générer la vôtre.
+Créez un fichier `.env` à la racine du projet :
+```bash
+touch .env
+
+```
+
+Générez une clé Fernet (AES) valide et injectez-la dans le fichier `.env` en exécutant cette commande :
+```bash
+python -c "from cryptography.fernet import Fernet; print(f'ENCRYPTION_KEY={Fernet.generate_key().decode()}')" >> .env
+```
+
+*(Assurez-vous que le fichier `.env` contient bien une ligne du type : `ENCRYPTION_KEY=votreclegénérée...`)*
+3. **Lancement de l'infrastructure :**
+```bash
+docker compose up -d
+```
+
+
+--------------------------------------------------------
+
+## 🏗️ Phase 1 : Architecture du Projet
 
 Le système repose sur une architecture distribuée de type **Maître / Agent** :
 1. **L'Agent (Client) :** Un *Must-Use Plugin* léger installé sur chaque site WordPress du parc.
@@ -58,10 +89,41 @@ Pour déployer l'agent sur un site client :
 5. Modifiez la constante `IWEB_AGENT_SECRET_TOKEN` dans le fichier pour définir une clé unique.
 6. L'agent est immédiatement actif.
 
+
+## 🏗️ Phase 2 : La Tour de Contrôle Centrale (Backend API)
+
+Cette phase constitue le cœur du projet **iweb FleetGuard**. Il s'agit du serveur central chargé de réceptionner, traiter, authentifier et stocker de manière permanente les événements de sécurité remontés par le parc de sites WordPress.
+
+### 🛠️ Stack Technologique
+* **Langage & Framework :** Python 3.11 avec **FastAPI**. Choisi pour ses performances asynchrones élevées, sa génération automatique de documentation (Swagger), et sa préparation à l'intégration future de modèles d'Intelligence Artificielle.
+* **Base de Données :** **PostgreSQL 15**, géré via l'ORM **SQLAlchemy**.
+* **Validation des Données :** **Pydantic**, pour bloquer instantanément les requêtes malformées ou malveillantes.
+* **Infrastructure :** Conteneurisation complète du backend, de la base de données et de l'interface d'administration (Adminer) via **Docker** (`docker-compose`).
+
+### 🗄️ Architecture des Données
+La base de données relationnelle s'articule autour de trois modèles définis dans `models.py` :
+1. **`client_sites` :** Le registre d'inventaire du parc. Stocke les URLs des sites clients et leurs jetons de communication.
+2. **`security_alerts` :** Le coffre-fort des logs. Stocke l'historique complet des alertes (type, sévérité, IP de l'attaquant, message), lié au site cible via une clé étrangère.
+3. **`dashboard_admins` :** La gestion des identités et des accès (IAM) pour les administrateurs du futur tableau de bord visuel.
+
+### 🔒 Sécurité Intégrée (Security by Design)
+L'API a été conçue avec des standards stricts de cybersécurité :
+* **Authentification par Bearer Token :** La route `/api/alerts` rejette toute requête (HTTP 401/403) ne présentant pas un jeton d'agent valide.
+* **Chiffrement au Repos (Encryption at Rest) :** Les jetons de communication ne sont jamais stockés en clair. Ils sont chiffrés dans PostgreSQL à l'aide de l'algorithme **Fernet (AES)** via un `TypeDecorator` personnalisé dans SQLAlchemy. L'API les déchiffre dynamiquement en mémoire uniquement lors de la vérification.
+
+### 🚀 Déploiement de l'Environnement de Développement
+L'infrastructure s'instancie de manière totalement isolée et automatisée :
+
+```bash
+# Lancement de l'API, de la base PostgreSQL et d'Adminer
+docker compose up -d
+
 ### Exemple de requête de test (cURL)
 ```bash
 curl -X GET [https://site-client.com/wp-json/iwebcreative/v1/health](https://site-client.com/wp-json/iwebcreative/v1/health) \
   -H "Authorization: Bearer VOTRE_TOKEN_SECRET"
+
+
 
 
 👨‍💻 Auteur

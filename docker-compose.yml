@@ -1,47 +1,46 @@
 version: '3.8'
 
 services:
-  # 1. La Base de données du site client
+  # 1. La Base de Données Centrale (Le centre de mémoire de la Tour de Contrôle)
   db:
-    image: mariadb:10.6
+    # On passe sur PostgreSQL, le moteur le plus robuste et recommandé pour Python/FastAPI
+    image: postgres:15-alpine
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: wordpress_db
-      MYSQL_USER: wp_user
-      MYSQL_PASSWORD: wp_password
+      POSTGRES_USER: fleetguard_admin
+      POSTGRES_PASSWORD: super_secret_password
+      POSTGRES_DB: fleetguard_db
+    ports:
+      - "5432:5432"
     volumes:
-      - db_data:/var/lib/mysql
+      - central_data:/var/lib/postgresql/data
 
-  # 2. Le site WordPress Client (Apache + PHP intégrés)
-  wordpress:
+  # 2. L'API Backend (Le moteur de surveillance en Python)
+  api:
+    image: python:3.11-slim
+    restart: always
+    working_dir: /app
+    env_file:
+      - .env
+    volumes:
+      # Synchronise en temps réel ton dossier local "./backend" avec le conteneur
+      - ./backend:/app
+    ports:
+      - "8000:8000" # Ton API sera accessible sur http://localhost:8000
     depends_on:
       - db
-    image: wordpress:latest
+    # Installe les bibliothèques requises et lance le serveur avec rechargement automatique
+    command: sh -c "pip install fastapi uvicorn sqlalchemy psycopg2-binary cryptography && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+
+  # 3. L'interface de gestion de la Base de Données
+  adminer:
+    # Adminer remplace phpMyAdmin : il est plus léger et gère parfaitement PostgreSQL
+    image: adminer
     restart: always
     ports:
-      - "8080:80" # Le site sera accessible sur http://localhost:8080
-    environment:
-      WORDPRESS_DB_HOST: db:3306
-      WORDPRESS_DB_USER: wp_user
-      WORDPRESS_DB_PASSWORD: wp_password
-      WORDPRESS_DB_NAME: wordpress_db
-    volumes:
-      # LIGNE CRUCIALE : Synchronise ton dossier local avec le conteneur en temps réel
-      - ./mu-plugins:/var/www/html/wp-content/mu-plugins
-
-  # 3. L'outil pour gérer la base de données visuellement
-  phpmyadmin:
+      - "8082:8080" # Accessible sur http://localhost:8081
     depends_on:
       - db
-    image: phpmyadmin/phpmyadmin
-    restart: always
-    ports:
-      - "8081:80" # Accessible sur http://localhost:8081
-    environment:
-      PMA_HOST: db
-      MYSQL_ROOT_PASSWORD: root_password
 
-# Déclaration du volume pour ne pas perdre la BDD si on éteint Docker
 volumes:
-  db_data:
+  central_data:
