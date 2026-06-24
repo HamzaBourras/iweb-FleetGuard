@@ -17,7 +17,7 @@ services:
 
   # 2. L'API Backend (Le moteur de surveillance en Python)
   api:
-    image: python:3.11-slim
+    build: ./backend
     restart: always
     working_dir: /app
     env_file:

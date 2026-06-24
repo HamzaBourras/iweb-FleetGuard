@@ -11,3 +11,14 @@ class SecurityEvent(BaseModel):
 # 2. Le moule global (qui correspond au JSON envoyé par ton agent PHP)
 class AgentPayload(BaseModel):
     security_events: List[SecurityEvent]
+
+
+# --- SCHÉMAS D'AUTHENTIFICATION (DASHBOARD) ---
+
+class AdminLogin(BaseModel):
+    email: str
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str

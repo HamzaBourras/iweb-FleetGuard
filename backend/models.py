@@ -65,3 +65,25 @@ class SecurityAlert(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     site = relationship("ClientSite", back_populates="alerts")
+
+
+class DashboardAdmin(Base):
+    """
+    Table : dashboard_admins
+    Rôle : Gérer les accès au tableau de bord visuel iweb FleetGuard.
+    """
+    __tablename__ = "dashboard_admins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    
+    # On stockera ici l'empreinte irréversible (hash) du mot de passe
+    hashed_password = Column(String, nullable=False)
+    
+    # Rôle pour différencier tes droits techniques et les droits de consultation de l'agence
+    role = Column(String, default="superadmin") 
+    
+    # Interrupteur d'urgence pour révoquer un accès instantanément
+    is_active = Column(Integer, default=1) 
+    
+    created_at = Column(DateTime, default=datetime.utcnow)

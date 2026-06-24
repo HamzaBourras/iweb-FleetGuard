@@ -1,0 +1,20 @@
+# On part d'une version allégée de Python
+FROM python:3.11-slim
+
+# On définit le dossier de travail dans le conteneur
+WORKDIR /app
+
+# On copie la liste de courses
+COPY requirements.txt .
+
+# On installe les dépendances (dont FastAPI, SQLAlchemy, et la cryptographie)
+RUN pip install --no-cache-dir -r requirements.txt
+
+# On copie tout le reste de ton code source
+COPY . .
+
+# On expose le port de l'API
+EXPOSE 8000
+
+# La commande de démarrage
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

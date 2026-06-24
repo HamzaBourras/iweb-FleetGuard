@@ -15,6 +15,7 @@ Base = declarative_base()
 # On importe les modèles APRÈS avoir défini Base pour éviter l'importation circulaire
 import models
 import schemas
+import security
 
 # On ordonne la création des tables dans PostgreSQL
 models.Base.metadata.create_all(bind=engine)
@@ -78,15 +79,60 @@ def receive_agent_alerts(
         "message": f"{len(payload.security_events)} alerte(s) enregistrée(s) avec succès pour le site ID {site_client.id}"
     }
 
+
+
+# --- ROUTES D'AUTHENTIFICATION DU TABLEAU DE BORD ---
+
+@app.post("/api/auth/login", response_model=schemas.Token)
+def login_admin(credentials: schemas.AdminLogin, db: Session = Depends(get_db)):
+    # 1. On cherche l'administrateur par son email
+    admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == credentials.email).first()
+    
+    # 2. On vérifie si le compte existe et si le mot de passe correspond au hash
+    if not admin or not security.verify_password(credentials.password, admin.hashed_password):
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+    
+    if admin.is_active == 0:
+        raise HTTPException(status_code=403, detail="Ce compte a été désactivé")
+
+    # 3. On génère le badge d'accès JWT
+    access_token = security.create_access_token(
+        data={"sub": admin.email, "role": admin.role}
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+# --- HACK TEMPORAIRE POUR INJECTER LE PREMIER ADMINISTRATEUR ---
+@app.get("/setup-admin")
+def setup_first_admin(db: Session = Depends(get_db)):
+    # Vérifie si le compte existe déjà pour éviter les doublons
+    admin_existe = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == "admin@iweb.com").first()
+    if admin_existe:
+        return {"message": "Le compte admin@iweb.com existe déjà !"}
+    
+    # Hachage sécurisé du mot de passe
+    mot_de_passe_hache = security.get_password_hash("SuperAdmin2026!")
+    
+    nouveau_admin = models.DashboardAdmin(
+        email="admin@iweb.com",
+        hashed_password=mot_de_passe_hache,
+        role="superadmin"
+    )
+    db.add(nouveau_admin)
+    db.commit()
+    
+    return {"message": "Compte administrateur créé avec succès : admin@iweb.com / SuperAdmin2026!"}
+
 # --- HACK TEMPORAIRE POUR INJECTER UN SITE DE TEST ---
 # Correction de "SessionLocal" en "Session"
-@app.get("/setup-test")
-def setup_test_site(db: Session = Depends(get_db)):
-    nouveau_site = models.ClientSite(
-        url="https://site-cobaye.com",
-        secret_token="IWEB_SECURE_TOKEN_2026_XYZ",
-        site_name="Site de Test Postman"
-    )
-    db.add(nouveau_site)
-    db.commit()
-    return {"message": "Site de test créé avec succès dans PostgreSQL !"}
+# @app.get("/setup-test")
+# def setup_test_site(db: Session = Depends(get_db)):
+#     nouveau_site = models.ClientSite(
+#         url="https://site-cobaye.com",
+#         secret_token="IWEB_SECURE_TOKEN_2026_XYZ",
+#         site_name="Site de Test Postman"
+#     )
+#     db.add(nouveau_site)
+#     db.commit()
+#     return {"message": "Site de test créé avec succès dans PostgreSQL !"}
