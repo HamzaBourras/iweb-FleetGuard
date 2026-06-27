@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import logoImg from './assets/logo.png';
+import { useNavigate } from 'react-router-dom';
 
 export default function Login() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(''); // Pour stocker les messages d'erreur de l'API
@@ -32,11 +34,10 @@ export default function Login() {
       // 3. Si c'est un succès, on sauvegarde le Token VIP dans le navigateur
       localStorage.setItem('fleetguard_token', data.access_token);
       
-      console.log("Connexion réussie ! Token sauvegardé :", data.access_token);
-      
-      // TODO: Rediriger l'utilisateur vers le vrai Dashboard (la page d'accueil sécurisée)
-      alert("Connexion réussie ! Vous êtes authentifié.");
+      // Redirection fluide vers le Dashboard
+      navigate('/dashboard', { replace: true });
 
+      
     } catch (err) {
       setError(err.message);
     } finally {
