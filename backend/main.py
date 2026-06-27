@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, Header
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
+from fastapi.middleware.cors import CORSMiddleware
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -26,6 +27,16 @@ app = FastAPI(
     title="iweb FleetGuard API",
     description="Le cerveau central de la Tour de Contrôle SecOps",
     version="1.0.0"
+)
+
+# --- CONFIGURATION CORS ---
+# On autorise uniquement le port de ton frontend React pour des raisons de sécurité
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"], 
+    allow_credentials=True,
+    allow_methods=["*"], # Autorise les requêtes GET, POST, PUT, DELETE
+    allow_headers=["*"], # Autorise tous les en-têtes (comme les tokens d'authentification)
 )
 
 # Fonction de dépendance pour ouvrir et fermer proprement la session BDD à chaque requête

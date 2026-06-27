@@ -1,37 +1,70 @@
 import { useState } from 'react';
-import logoImg from './assets/logo.png'; // Assurez-vous que le chemin est correct
+import logoImg from './assets/logo.png';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState(''); // Pour stocker les messages d'erreur de l'API
+  const [isLoading, setIsLoading] = useState(false); // Pour faire patienter l'utilisateur
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("Tentative avec :", email, password);
-    // TODO: Connecter à l'API FastAPI
+    setError('');
+    setIsLoading(true);
+
+    try {
+      // 1. On envoie la requête POST à FastAPI
+      const response = await fetch('http://localhost:8000/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      // 2. Si le serveur refuse l'accès (erreur 401 ou 403)
+      if (!response.ok) {
+        throw new Error(data.detail || 'Erreur de connexion');
+      }
+
+      // 3. Si c'est un succès, on sauvegarde le Token VIP dans le navigateur
+      localStorage.setItem('fleetguard_token', data.access_token);
+      
+      console.log("Connexion réussie ! Token sauvegardé :", data.access_token);
+      
+      // TODO: Rediriger l'utilisateur vers le vrai Dashboard (la page d'accueil sécurisée)
+      alert("Connexion réussie ! Vous êtes authentifié.");
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    // Le conteneur principal (fond gris très clair)
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      
-      {/* La carte centrale (blanche avec une ombre douce) */}
       <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 border border-gray-100">
         
-        {/* En-tête */}
         <div className="text-center mb-8 flex flex-col items-center">
           <img 
             src={logoImg} 
             alt="Logo iweb FleetGuard" 
-            className="w-64 h-auto mb-3 rounded-md" 
+            className="w-64 h-auto mb-3 shadow-sm rounded-md" 
           />
           <p className="text-gray-500 font-medium">Accès sécurisé au tableau de bord</p>
         </div>
 
-        {/* Le Formulaire */}
+        {/* Affichage du message d'erreur s'il y en a un */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-center text-sm font-semibold">
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
-          
-          {/* Champ Email */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Adresse Email
@@ -46,7 +79,6 @@ export default function Login() {
             />
           </div>
 
-          {/* Champ Mot de passe */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Mot de passe
@@ -61,14 +93,13 @@ export default function Login() {
             />
           </div>
 
-          {/* Bouton de soumission */}
           <button 
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow hover:shadow-lg transition-all duration-200"
+            disabled={isLoading}
+            className={`w-full text-white font-bold py-3 px-4 rounded-lg shadow transition-all duration-200 ${isLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg'}`}
           >
-            Se connecter
+            {isLoading ? 'Vérification...' : 'Se connecter'}
           </button>
-          
         </form>
       </div>
     </div>
