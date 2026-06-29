@@ -143,6 +143,27 @@ def get_dashboard_stats(
         "health_score": health_score
     }
 
+# Route pour récupérer tous les sites clients (protégée par JWT)
+@app.get("/api/sites")
+def get_all_sites(
+    token: str = Depends(oauth2_scheme), # 🔒 Protection JWT active
+    db: Session = Depends(get_db)
+):
+    # On récupère tous les sites de la base de données
+    sites = db.query(models.ClientSite).all()
+    
+    # On renvoie la liste
+    return sites
+
+
+
+
+
+
+
+
+
+
 
 
 
