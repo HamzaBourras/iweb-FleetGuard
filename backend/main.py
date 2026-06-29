@@ -191,6 +191,15 @@ def create_site(
     return nouveau_site
 
 
+# --- ROUTE DES ALERTES DE SÉCURITÉ ---
+@app.get("/api/dashboard/alerts")
+def get_security_alerts(
+    token: str = Depends(oauth2_scheme), # 🔒 Toujours protégé
+    db: Session = Depends(get_db)
+):
+    # Récupère les 50 dernières alertes, classées par ID décroissant (les plus récentes en premier)
+    alerts = db.query(models.SecurityAlert).order_by(models.SecurityAlert.id.desc()).limit(50).all()
+    return alerts
 
 
 
