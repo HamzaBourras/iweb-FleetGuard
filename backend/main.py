@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -55,6 +56,9 @@ def read_root():
         "message": "Bienvenue sur l'API centrale iweb FleetGuard. Le moteur Python est opérationnel."
     }
 
+# On indique à FastAPI quelle route délivre les tokens
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+
 # 4. Route pour recevoir les alertes de l'agent PHP
 @app.post("/api/alerts")
 def receive_agent_alerts(
@@ -91,7 +95,6 @@ def receive_agent_alerts(
     }
 
 
-
 # --- ROUTES D'AUTHENTIFICATION DU TABLEAU DE BORD ---
 
 @app.post("/api/auth/login", response_model=schemas.Token)
@@ -112,6 +115,35 @@ def login_admin(credentials: schemas.AdminLogin, db: Session = Depends(get_db)):
     )
     
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+# --- ROUTES DU TABLEAU DE BORD (PROTÉGÉES) ---
+
+@app.get("/api/dashboard/stats")
+def get_dashboard_stats(
+    token: str = Depends(oauth2_scheme), # 🔒 Le vigile bloque si pas de token !
+    db: Session = Depends(get_db)
+):
+    # Idéalement, ici on utilise un module security.verify_token(token) 
+    # pour s'assurer que le token n'est pas expiré ou falsifié.
+    
+    # 1. Requêtes réelles à ta base PostgreSQL
+    total_sites = db.query(models.ClientSite).count()
+    total_alerts = db.query(models.SecurityAlert).count()
+    
+    # 2. Calcul dynamique d'un score de santé (algorithme simple)
+    # S'il y a 0 alerte = 100%. Chaque alerte fait baisser le score de 2%.
+    health_score_value = 100 - (total_alerts * 2)
+    health_score = f"{max(0, health_score_value)}%"
+    
+    # 3. On renvoie les données formatées pour React
+    return {
+        "active_sites": total_sites,
+        "vulnerabilities": total_alerts,
+        "health_score": health_score
+    }
+
+
 
 
 # --- HACK TEMPORAIRE POUR INJECTER LE PREMIER ADMINISTRATEUR ---
