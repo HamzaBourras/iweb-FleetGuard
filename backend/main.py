@@ -4,6 +4,8 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+import secrets
+from pydantic import BaseModel
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -156,6 +158,37 @@ def get_all_sites(
     return sites
 
 
+#**** Ajout d'un nouveau site client (protégé par JWT) ****
+# --- SCHÉMA DE DONNÉES ---
+# On définit ce que React a le droit de nous envoyer
+class SiteCreate(BaseModel):
+    site_name: str
+    url: str
+
+# --- ROUTE DE CRÉATION ---
+@app.post("/api/sites")
+def create_site(
+    site_data: SiteCreate,
+    token: str = Depends(oauth2_scheme), # 🔒 Protection active
+    db: Session = Depends(get_db)
+):
+    # 1. Génération d'un token cryptographique fort (64 caractères sécurisés)
+    nouveau_token = f"IWEB_{secrets.token_urlsafe(32)}"
+    
+    # 2. Préparation du nouveau site pour la base de données
+    nouveau_site = models.ClientSite(
+        site_name=site_data.site_name,
+        url=site_data.url,
+        secret_token=nouveau_token
+    )
+    
+    # 3. Sauvegarde dans PostgreSQL
+    db.add(nouveau_site)
+    db.commit()
+    db.refresh(nouveau_site) # Récupère l'ID généré par la BDD
+    
+    # 4. On renvoie le site créé à React
+    return nouveau_site
 
 
 
