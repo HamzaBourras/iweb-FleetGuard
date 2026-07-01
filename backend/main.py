@@ -73,12 +73,20 @@ def receive_agent_alerts(
 
     token_recu = authorization.split(" ")[1]
 
+    # --- LA NOUVELLE LOGIQUE DE SÉCURITÉ EST ICI ---
     sites = db.query(models.ClientSite).all()
-    site_client = next((site for site in sites if site.secret_token == token_recu), None)
+    site_client = None
+    
+    # On boucle sur les sites et on utilise la fonction de vérification cryptographique
+    for site in sites:
+        if security.verify_password(token_recu, site.secret_token):
+            site_client = site
+            break
 
     if not site_client:
-        raise HTTPException(status_code=403, detail="Token refusé : Site inconnu ou accès révoqué")
+        raise HTTPException(status_code=403, detail="Token refusé : Site inconnu, token invalide ou accès révoqué")
 
+    # ... (Le reste du code d'enregistrement de l'alerte reste identique) ...
     for event in payload.security_events:
         nouvelle_alerte = models.SecurityAlert(
             site_id=site_client.id,
@@ -165,30 +173,39 @@ class SiteCreate(BaseModel):
     site_name: str
     url: str
 
-# --- ROUTE DE CRÉATION ---
+# --- ROUTE DE CRÉATION des sites ---
 @app.post("/api/sites")
 def create_site(
     site_data: SiteCreate,
-    token: str = Depends(oauth2_scheme), # 🔒 Protection active
+    token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ):
-    # 1. Génération d'un token cryptographique fort (64 caractères sécurisés)
-    nouveau_token = f"IWEB_{secrets.token_urlsafe(32)}"
+    # 1. Génération du token en clair (celui qu'on va montrer à l'admin)
+    raw_token = f"IWEB_{secrets.token_urlsafe(32)}"
     
-    # 2. Préparation du nouveau site pour la base de données
+    # 2. Hachage cryptographique du token (celui qu'on garde)
+    hashed_token = security.get_password_hash(raw_token)
+    
+    # 3. Préparation et sauvegarde dans PostgreSQL avec le hash
     nouveau_site = models.ClientSite(
         site_name=site_data.site_name,
         url=site_data.url,
-        secret_token=nouveau_token
+        secret_token=hashed_token  # 🔒 Le serveur ne connaît plus le vrai token
     )
     
-    # 3. Sauvegarde dans PostgreSQL
     db.add(nouveau_site)
     db.commit()
-    db.refresh(nouveau_site) # Récupère l'ID généré par la BDD
+    db.refresh(nouveau_site) 
     
-    # 4. On renvoie le site créé à React
-    return nouveau_site
+    # 4. On renvoie une réponse personnalisée contenant le token en clair.
+    # C'est la SEULE et UNIQUE fois que ce token sortira du backend !
+    return {
+        "id": nouveau_site.id,
+        "site_name": nouveau_site.site_name,
+        "url": nouveau_site.url,
+        "secret_token": raw_token, 
+        "status": "actif"
+    }
 
 
 # --- ROUTE DES ALERTES DE SÉCURITÉ ---

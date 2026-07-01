@@ -5,13 +5,15 @@ export default function SitesList() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // --- ÉTATS POUR LA MODALE D'AJOUT ---
+  // États pour la modale d'ajout
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteUrl, setNewSiteUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // NOUVEL ÉTAT : Stockage temporaire du token en clair
+  const [newGeneratedToken, setNewGeneratedToken] = useState(null);
 
-  // Fonction pour charger la liste des sites
   const fetchSites = async () => {
     const token = localStorage.getItem('fleetguard_token');
     try {
@@ -33,7 +35,6 @@ export default function SitesList() {
     fetchSites();
   }, []);
 
-  // --- FONCTION POUR AJOUTER UN SITE ---
   const handleAddSite = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -54,22 +55,30 @@ export default function SitesList() {
 
       if (!response.ok) throw new Error("Erreur lors de l'ajout du site.");
 
-      // Si le succès est confirmé par le backend
       const addedSite = await response.json();
       
-      // On met à jour le tableau visuel directement sans recharger la page
-      setSites([...sites, addedSite]);
+      // On rafraîchit la liste pour inclure le nouveau site
+      fetchSites();
       
-      // On nettoie et ferme la modale
+      // On affiche l'écran de succès avec le token en clair
+      setNewGeneratedToken(addedSite.secret_token);
+      
+      // On nettoie les champs du formulaire
       setNewSiteName('');
       setNewSiteUrl('');
-      setIsModalOpen(false);
 
     } catch (err) {
-      alert(err.message); // Affichage simple de l'erreur pour l'instant
+      alert(err.message);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Fonction pour copier le token et fermer la modale proprement
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    // On détruit le token de la mémoire front-end !
+    setTimeout(() => setNewGeneratedToken(null), 300); 
   };
 
   if (isLoading) return <div className="text-gray-500 animate-pulse p-6">Chargement de la flotte...</div>;
@@ -116,13 +125,14 @@ export default function SitesList() {
                       <a href={site.url} target="_blank" rel="noreferrer">{site.url}</a>
                     </td>
                     <td className="px-6 py-4">
-                      <code className="bg-gray-100 text-xs px-2 py-1 rounded text-gray-600 border border-gray-200 select-all cursor-pointer" title="Double-cliquez pour sélectionner">
-                        {site.secret_token.substring(0, 15)}...
-                      </code>
+                      {/* Affichage sécurisé : on ne montre plus le token */}
+                      <span className="bg-slate-100 text-xs px-2.5 py-1.5 rounded text-slate-400 font-mono border border-slate-200 select-none">
+                        •••••••••••••••• 
+                      </span>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                        En attente
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span> Actif
                       </span>
                     </td>
                   </tr>
@@ -133,57 +143,102 @@ export default function SitesList() {
         </div>
       </div>
 
-      {/* --- FENÊTRE MODALE D'AJOUT --- */}
+      {/* --- FENÊTRE MODALE --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-gray-100">
-              <h3 className="text-xl font-bold text-gray-900">Nouveau Site Cible</h3>
-              <p className="text-sm text-gray-500 mt-1">Générez un token unique pour le plugin WordPress.</p>
-            </div>
             
-            <form onSubmit={handleAddSite} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Nom du projet</label>
-                <input 
-                  type="text" 
-                  required
-                  value={newSiteName}
-                  onChange={(e) => setNewSiteName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Ex: Boutique E-commerce WordPress"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">URL (https://...)</label>
-                <input 
-                  type="url" 
-                  required
-                  value={newSiteUrl}
-                  onChange={(e) => setNewSiteUrl(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="https://www.monsite.com"
-                />
-              </div>
+            {/* Si un token vient d'être généré, on affiche l'écran de sécurité */}
+            {newGeneratedToken ? (
+              <div className="p-6">
+                <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                  ✓
+                </div>
+                <h3 className="text-xl font-bold text-center text-gray-900 mb-2">Site ajouté avec succès !</h3>
+                
+                <div className="bg-orange-50 border-l-4 border-orange-500 p-4 mb-6 rounded-r-lg mt-6">
+                  <h4 className="text-sm font-bold text-orange-800 mb-1">⚠️ Action requise immédiatement</h4>
+                  <p className="text-xs text-orange-700">
+                    Copiez le token ci-dessous pour configurer votre agent PHP. 
+                    <strong> Pour des raisons de sécurité, il ne sera plus jamais affiché.</strong>
+                  </p>
+                </div>
 
-              <div className="flex gap-3 pt-4">
+                <div className="bg-slate-900 p-4 rounded-lg flex items-center justify-between gap-4 mb-6">
+                  <code className="text-green-400 font-mono text-sm break-all">
+                    {newGeneratedToken}
+                  </code>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(newGeneratedToken);
+                      alert("Token copié dans le presse-papier !");
+                    }}
+                    className="bg-slate-700 hover:bg-slate-600 text-white p-2 rounded transition-colors shrink-0"
+                    title="Copier le token"
+                  >
+                    📋
+                  </button>
+                </div>
+
                 <button 
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
+                  onClick={handleCloseModal}
+                  className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors"
                 >
-                  Annuler
-                </button>
-                <button 
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:bg-blue-400"
-                >
-                  {isSubmitting ? 'Génération...' : 'Créer et générer le Token'}
+                  J'ai copié le token, fermer
                 </button>
               </div>
-            </form>
+            ) : (
+              /* Sinon, on affiche le formulaire classique */
+              <>
+                <div className="p-6 border-b border-gray-100">
+                  <h3 className="text-xl font-bold text-gray-900">Nouveau Site Cible</h3>
+                  <p className="text-sm text-gray-500 mt-1">Provisionnez une nouvelle cible pour la flotte.</p>
+                </div>
+                
+                <form onSubmit={handleAddSite} className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Nom du projet</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={newSiteName}
+                      onChange={(e) => setNewSiteName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Ex: Boutique E-commerce JLM"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">URL (https://...)</label>
+                    <input 
+                      type="url" 
+                      required
+                      value={newSiteUrl}
+                      onChange={(e) => setNewSiteUrl(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="https://www.monsite.com"
+                    />
+                  </div>
+
+                  <div className="flex gap-3 pt-4">
+                    <button 
+                      type="button"
+                      onClick={() => setIsModalOpen(false)}
+                      className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
+                    >
+                      Annuler
+                    </button>
+                    <button 
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:bg-blue-400"
+                    >
+                      {isSubmitting ? 'Génération...' : 'Générer le Token'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}
