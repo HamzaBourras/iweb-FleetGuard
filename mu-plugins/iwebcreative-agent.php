@@ -92,30 +92,60 @@ function iweb_get_health_data() {
 
 
 /**
- * 6. Moteur de journalisation centralisé (SecOps Logger)
- * Cette fonction simplifie l'enregistrement de n'importe quel événement.
+ * 6. Moteur de journalisation centralisé & Transmission (Push Model)
  */
 function iweb_log_security_event( $event_type, $severity, $message ) {
-    $ip = isset( $_SERVER['REMOTE_ADDR'] ) ? $_SERVER['REMOTE_ADDR'] : 'IP_Inconnue';
+    // On sécurise la récupération de l'IP
+    $ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field($_SERVER['REMOTE_ADDR']) : 'IP_Inconnue';
     $time = current_time( 'mysql' );
 
+    // --- 1. SAUVEGARDE LOCALE (Optionnelle, utile pour le debug sur place) ---
     $logs = get_transient( 'iweb_security_logs' ) ?: [];
-
-    $logs[] = [
+    $event_data = [
         'event_type' => $event_type,
-        'severity'   => $severity,     // 'low', 'medium', 'high', 'critical'
+        'severity'   => $severity,
         'message'    => $message,
-        'ip'         => $ip,
+        'ip_address' => $ip,
         'time'       => $time
     ];
-
-    // Limiter la taille du journal pour préserver la mémoire (FIFO : on garde les 50 derniers)
-    if ( count( $logs ) > 50 ) {
-        array_shift( $logs );
-    }
-
+    $logs[] = $event_data;
+    if ( count( $logs ) > 50 ) { array_shift( $logs ); }
     set_transient( 'iweb_security_logs', $logs, DAY_IN_SECONDS );
+
+
+    // --- 2. TRANSMISSION TEMPS RÉEL AU SOC FASTAPI ---
+    
+    // ⚠️ ATTENTION RÉSEAU DOCKER : 
+    // Si WP est dans un conteneur et FastAPI dans un autre, localhost ne marchera pas.
+    // Utilise le nom du service Docker (ex: http://backend:8000/api/alerts) 
+    // ou l'IP de ta machine hôte (http://host.docker.internal:8000/api/alerts).
+    $api_url = 'https://candy-amenity-tricking.ngrok-free.dev/api/alerts'; 
+
+    $payload = wp_json_encode([
+        'security_events' => [
+            [
+                'event_type' => $event_type,
+                'severity'   => $severity,
+                'message'    => $message,
+                'ip_address' => $ip
+            ]
+        ]
+    ]);
+
+    // Envoi de la requête HTTP
+    wp_remote_post( $api_url, [
+        'method'      => 'POST',
+        'timeout'     => 3, // Timeout court pour ne pas bloquer l'affichage du site client
+        'redirection' => 0,
+        'blocking'    => false, // IMPORTANT : Exécution asynchrone ("Fire and forget")
+        'headers'     => [
+            'Content-Type'  => 'application/json',
+            'Authorization' => 'Bearer ' . IWEB_AGENT_SECRET_TOKEN
+        ],
+        'body'        => $payload,
+    ]);
 }
+
 
 /**
  * 7. Détection d'Attaques (Hooks de surveillance active)
