@@ -9,13 +9,13 @@ export default function SecurityAlerts() {
     const fetchAlerts = async () => {
       const token = localStorage.getItem('fleetguard_token');
       try {
-        const response = await fetch('http://localhost:8000/api/dashboard/alerts', {
+        const response = await fetch('http://localhost:8000/api/alerts', {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        
+
         if (!response.ok) throw new Error("Impossible de charger les logs de sécurité.");
-        
+
         const data = await response.json();
         setAlerts(data);
       } catch (err) {
@@ -26,7 +26,7 @@ export default function SecurityAlerts() {
     };
 
     fetchAlerts();
-    
+
     // Optionnel mais recommandé : rafraîchir les alertes toutes les 30 secondes
     const interval = setInterval(fetchAlerts, 30000);
     return () => clearInterval(interval);
@@ -69,6 +69,7 @@ export default function SecurityAlerts() {
               <th className="px-6 py-4 font-semibold">Sévérité</th>
               <th className="px-6 py-4 font-semibold">Type d'Attaque</th>
               <th className="px-6 py-4 font-semibold">IP Source</th>
+              <th className="px-6 py-4 font-semibold">Site Cible</th>
               <th className="px-6 py-4 font-semibold">Détails techniques</th>
             </tr>
           </thead>
@@ -92,6 +93,11 @@ export default function SecurityAlerts() {
                   <td className="px-6 py-4">
                     <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded">
                       {alert.ip_address || 'Inconnue'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="font-semibold text-gray-800 bg-gray-100 px-2 py-1 rounded">
+                      {alert.site_name}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-gray-600 truncate max-w-xs" title={alert.message}>

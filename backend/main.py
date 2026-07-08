@@ -61,6 +61,7 @@ def read_root():
 # On indique à FastAPI quelle route délivre les tokens
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
+
 # 4. Route pour recevoir les alertes de l'agent PHP
 @app.post("/api/alerts")
 def receive_agent_alerts(
@@ -208,16 +209,34 @@ def create_site(
     }
 
 
-# --- ROUTE DES ALERTES DE SÉCURITÉ ---
-@app.get("/api/dashboard/alerts")
-def get_security_alerts(
-    token: str = Depends(oauth2_scheme), # 🔒 Toujours protégé
-    db: Session = Depends(get_db)
+# --- ROUTE DE RÉCUPÉRATION DES ALERTES POUR LE DASHBOARD ---
+@app.get("/api/alerts")
+def get_all_alerts(
+    db: Session = Depends(get_db), 
+    token: str = Depends(oauth2_scheme)
 ):
-    # Récupère les 50 dernières alertes, classées par ID décroissant (les plus récentes en premier)
-    alerts = db.query(models.SecurityAlert).order_by(models.SecurityAlert.id.desc()).limit(50).all()
-    return alerts
+    # On fait une jointure entre SecurityAlert et ClientSite
+    alerts_query = db.query(
+        models.SecurityAlert, 
+        models.ClientSite.site_name
+    ).join(
+        models.ClientSite, 
+        models.SecurityAlert.site_id == models.ClientSite.id
+    ).order_by(models.SecurityAlert.timestamp.desc()).all() # <-- CHANGEMENT ICI (timestamp au lieu de created_at)
 
+    resultats = []
+    for alerte, nom_du_site in alerts_query:
+        resultats.append({
+            "id": alerte.id,
+            "site_name": nom_du_site,
+            "event_type": alerte.event_type,
+            "severity": alerte.severity,
+            "message": alerte.message,
+            "ip_address": alerte.ip_address,
+            "timestamp": alerte.timestamp # <-- CHANGEMENT ICI
+        })
+
+    return resultats
 
 
 

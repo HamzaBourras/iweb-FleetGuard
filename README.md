@@ -122,7 +122,71 @@ docker compose up -d
 ```bash
 curl -X GET [https://site-client.com/wp-json/iwebcreative/v1/health](https://site-client.com/wp-json/iwebcreative/v1/health) \
   -H "Authorization: Bearer VOTRE_TOKEN_SECRET"
+```
 
+## 🖥️ Phase 3 : Le Centre de Commandes (Dashboard React)
+
+Le tableau de bord (Frontend) constitue la "Tour de Contrôle" (*Single Pane of Glass*) de l'infrastructure iweb FleetGuard. Développé en **React** et stylisé avec **Tailwind CSS**, il permet aux administrateurs de sécurité d'avoir une visibilité et une réactivité en temps réel sur l'ensemble du parc cible.
+
+L'interface est structurée autour de trois espaces de travail distincts :
+
+### 📊 1. Vue d'ensemble (Overview)
+Le centre de pilotage principal offrant une vision macroscopique de la santé de la flotte.
+* **Indicateurs Clés de Sécurité (KPIs) :** Affichage immédiat du nombre de capteurs actifs, du volume d'alertes interceptées sur les dernières 24h, et du ratio de sites sains par rapport aux sites subissant des attaques.
+* **Analyse de Tendances :** Visualisation globale permettant d'identifier rapidement les pics d'activité malveillante ou les campagnes d'attaques coordonnées sur le parc.
+
+### 🌐 2. Gestion de la Flotte (Sites)
+Le module de provisionnement et de supervision (*Fleet Management*) des capteurs déployés.
+* **Provisionnement Sécurisé :** Ajout de nouvelles cibles avec génération automatique d'un jeton d'authentification cryptographique à très haute entropie.
+* **Architecture "Read-Once" :** Pour contrer les risques de fuites de données (*Data Breach*), le jeton de l'agent n'est affiché en clair qu'une seule et unique fois lors de sa création. L'interface masque ensuite définitivement la donnée, le serveur ne conservant qu'une empreinte hachée (`bcrypt`).
+* **Observabilité Continue :** Suivi dynamique du statut des agents (Actif, Hors ligne, Compromis) permettant de détecter instantanément le sabotage ou la désactivation d'une sonde sur un site client.
+
+### 🚨 3. Centre d'Opérations de Sécurité (Alerts)
+Le cœur réactif du système (SecOps), conçu pour l'analyse des incidents et la qualification des menaces.
+* **Flux en Temps Réel :** Réception et affichage asynchrone des *payloads* d'attaques expédiés par les agents WordPress à travers le tunnel sécurisé.
+* **Triage par Criticité :** Les événements sont automatiquement classifiés par niveau de sévérité (Critique, Élevée, Moyenne, Faible) à l'aide de badges visuels stricts pour prioriser la réponse à incident.
+* **Traçabilité Forensique :** Chaque log consigne le type d'attaque (ex: *Brute Force*, *Élévation de privilèges*), le message de l'agent, le timestamp exact, et l'adresse IP de l'attaquant pour faciliter la mise en place de règles de pare-feu (WAF).
+
+
+## ⚔️ Phase 4 : Déploiement en Production & Red Teaming (Simulation d'Attaques)
+
+Cette phase valide la chaîne de communication de bout en bout entre le site client en production et la Tour de Contrôle locale, en utilisant des techniques de contournement administratif et des simulations d'attaques réelles (Pentesting).
+
+### 1. Génération du Jeton (Read-Once)
+Pour respecter le principe de *Zero Trust* et limiter le rayon d'impact (Blast Radius) en cas de compromission d'un serveur client :
+1. Chaque site cible nécessite son propre jeton d'authentification unique.
+2. Le jeton est généré par l'API (FastAPI) lors de l'ajout du site depuis le tableau de bord React.
+3. **Sécurité :** Le backend applique un hachage cryptographique (`bcrypt`) avant l'enregistrement en base de données. Le jeton en clair n'est affiché qu'une seule et unique fois à l'administrateur (Read-Once).
+
+### 2. Déploiement Furtif de l'Agent via SFTP
+Le déploiement manuel garantit que l'agent est installé proprement sans passer par les installeurs standards de WordPress.
+
+1. Connexion au serveur d'hébergement du site cible (ex: `i-webcreative.com`) à l'aide d'un client sécurisé comme **WinSCP**.
+2. Navigation vers le répertoire des extensions : `/public_html/wp-content/plugins/`.
+3. Création d'un répertoire dédié `iwebcreative-agent` et transfert du fichier PHP préconfiguré avec l'URL de l'API et le jeton en clair.
+4. **Bypass des restrictions d'accès (Hardening) :** Si le site masque sa page de connexion `/wp-admin` (redirection vers `/contact` par exemple) via une extension de sécurité (ex: *WPS Hide Login*) :
+   * Renommer temporairement le dossier de l'extension de sécurité depuis WinSCP (ex: `wps-hide-login_bak`) pour forcer sa désactivation silencieuse.
+   * Accéder à l'URL native `wp-login.php`, activer l'agent *iwebCreative Security*, puis restaurer le nom du dossier de sécurité initial.
+
+### 3. Établissement du Tunnel Réseau (Phase de Test)
+Afin de permettre au site de production de communiquer avec l'API locale en cours de développement, un tunnel sécurisé est mis en place :
+* Utilisation de **Ngrok** (ou Cloudflare Tunnels) pour exposer le port `8000` du conteneur Docker FastAPI vers une URL HTTPS publique temporaire.
+* L'URL générée est injectée dans la configuration de l'agent PHP pour acheminer les payloads JSON.
+
+### 4. Simulation d'Intrusion (Brute Force)
+Une fois l'agent armé et le tunnel ouvert, un script Python simule le comportement d'un attaquant automatisé pour valider la réactivité du SOC (Security Operations Center).
+
+```python
+import requests
+import time
+
+WP_LOGIN_URL = "[https://votre-site-cible.com/wp-login.php](https://votre-site-cible.com/wp-login.php)"
+usernames = ["admin", "root", "webmaster"]
+
+for username in usernames:
+    payload = {'log': username, 'pwd': 'FauxPassword123!', 'wp-submit': 'Log In'}
+    requests.post(WP_LOGIN_URL, data=payload)
+    time.sleep(2)
 
 
 
