@@ -185,3 +185,72 @@ add_action( 'after_password_reset', function( $user, $new_pass ) {
 }, 10, 2 );
 
 
+
+// ========================================================================
+// 8. Détection Avancée (Mini-WAF & IDS Couche 7)
+// ========================================================================
+
+/**
+ * G. Détection de Scanners de Vulnérabilités (Nmap, WPScan, SQLMap)
+ * Analyse le User-Agent pour repérer les outils automatisés agressifs.
+ */
+add_action( 'init', function() {
+    $user_agent = isset( $_SERVER['HTTP_USER_AGENT'] ) ? $_SERVER['HTTP_USER_AGENT'] : '';
+    // Expression régulière contenant les signatures des scanners les plus connus
+    $bad_agents_regex = '/(?:nmap|sqlmap|nikto|wpscan|dirbuster|acunetix|masscan|hydra)/i';
+
+    if ( preg_match( $bad_agents_regex, $user_agent ) ) {
+        iweb_log_security_event( 'scanner_detected', 'high', "Scanner automatise detecte via User-Agent : " . sanitize_text_field($user_agent) );
+    }
+});
+
+/**
+ * H. Détection des Injections SQL (SQLi) et XSS (Cross-Site Scripting)
+ * Inspecte l'URL demandée pour trouver des "Payloads" malveillants.
+ */
+add_action( 'init', function() {
+    $request_uri  = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+    $query_string = isset($_SERVER['QUERY_STRING']) ? $_SERVER['QUERY_STRING'] : '';
+
+    // Signatures d'attaques classiques (SQLi, XSS, Path Traversal LFI)
+    $bad_patterns = [
+        '/(?:union\s+all\s+select|concat\s*\(|information_schema|waitfor\s+delay)/i', // SQL Injection
+        '/(?:<script>|javascript:|onerror=|onload=)/i',                               // XSS
+        '/(?:\.\.\/|\.\.\\\\|\/etc\/passwd)/i'                                        // Path Traversal / LFI
+    ];
+
+    foreach ( $bad_patterns as $pattern ) {
+        if ( preg_match( $pattern, $request_uri ) || preg_match( $pattern, $query_string ) ) {
+            iweb_log_security_event( 'waf_alert_sqli_xss', 'critical', "Tentative d'attaque Web (SQLi/XSS/LFI) detectee sur l'URI : " . sanitize_text_field($request_uri) );
+            
+            // Note DevSecOps : Actuellement on fait de l'IDS (Détection). 
+            // Si on décommente wp_die(), on devient un IPS (Prévention) !
+            // wp_die('iweb FleetGuard : Requête bloquée par sécurité.', 'Accès Refusé', ['response' => 403]);
+            break; 
+        }
+    }
+});
+
+/**
+ * I. Détection de tentative d'Upload de Web Shell (Fichiers malveillants)
+ * Écoute le processus d'upload de WordPress avant que le fichier ne soit enregistré.
+ */
+add_filter( 'wp_handle_upload_prefilter', function( $file ) {
+    $filename = strtolower( $file['name'] );
+    // WP bloque le PHP par défaut, mais les attaquants tentent des extensions doubles ou alternatives
+    if ( preg_match( '/\.(php|phtml|php5|shtml|exe|sh|pl|cgi|py)$/', $filename ) ) {
+        iweb_log_security_event( 'malicious_upload_attempt', 'critical', "Tentative d'upload d'un fichier potentiellement executable (WebShell) : {$filename}" );
+    }
+    return $file;
+});
+
+/**
+ * J. Utilisation de l'Éditeur de Fichiers interne de WordPress
+ * Les attaquants l'utilisent souvent après une compromission admin pour injecter du code dans le thème.
+ */
+add_action( 'load-theme-editor.php', function() {
+    iweb_log_security_event( 'file_editor_accessed', 'critical', "L'editeur de code interne WordPress a ete ouvert." );
+});
+add_action( 'load-plugin-editor.php', function() {
+    iweb_log_security_event( 'file_editor_accessed', 'critical', "L'editeur de plugins interne WordPress a ete ouvert." );
+});
