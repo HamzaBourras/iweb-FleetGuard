@@ -1,4 +1,5 @@
 import { useNavigate, NavLink, Outlet } from 'react-router-dom';
+import logoImg from './assets/logo-dark.png';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -10,40 +11,44 @@ export default function Dashboard() {
 
   // Fonction utilitaire pour gérer la couleur du menu actif avec Tailwind
   const navLinkClasses = ({ isActive }) =>
-    `w-full text-left px-4 py-2.5 rounded-lg font-medium transition-colors block ${
-      isActive 
-        ? "bg-slate-800 text-white" 
-        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+    `w-full text-left px-4 py-2.5 rounded-lg font-medium transition-colors block ${isActive
+      ? "bg-slate-800 text-white"
+      : "text-slate-300 hover:bg-slate-800 hover:text-white"
     }`;
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
-      
+
       {/* 📁 MENU LATÉRAL */}
       <div className="w-64 bg-slate-900 text-white flex flex-col justify-between p-4 shadow-xl shrink-0">
         <div>
           <div className="pb-6 mb-6 border-b border-slate-700 text-center">
-            <h1 className="text-xl font-bold text-cyan-400 tracking-wider">iweb FleetGuard</h1>
-            <p className="text-xs text-slate-400 mt-1">Supervision Active</p>
+            {/* <h1 className="text-xl font-bold text-cyan-400 tracking-wider">iweb FleetGuard</h1> */}
+            <img
+              src={logoImg}
+              alt="Logo iweb FleetGuard"
+              className="w-64 h-auto mb-3 rounded-md"
+            />
+            {/* <p className="text-xs text-slate-400 mt-1">Supervision Active</p> */}
           </div>
-          
+
           <nav className="space-y-2">
             {/* L'attribut "end" garantit que ce lien n'est actif que sur la racine /dashboard */}
             <NavLink to="/dashboard" end className={navLinkClasses}>
               📊 Vue d'ensemble
             </NavLink>
-            
+
             <NavLink to="/dashboard/sites" className={navLinkClasses}>
               🌐 Sites WordPress
             </NavLink>
-            
+
             <NavLink to="/dashboard/alerts" className={navLinkClasses}>
               🚨 Alertes de Sécurité
             </NavLink>
           </nav>
         </div>
 
-        <button 
+        <button
           onClick={handleLogout}
           className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow mt-4"
         >

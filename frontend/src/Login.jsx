@@ -53,7 +53,7 @@ export default function Login() {
           <img 
             src={logoImg} 
             alt="Logo iweb FleetGuard" 
-            className="w-64 h-auto mb-3 shadow-sm rounded-md" 
+            className="w-64 h-auto mb-3 rounded-md" 
           />
           <p className="text-gray-500 font-medium">Accès sécurisé au tableau de bord</p>
         </div>
