@@ -100,7 +100,7 @@ export default function Dashboard() {
         <header className="bg-white/80 backdrop-blur-md shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] h-[72px] flex items-center justify-between px-8 border-b border-slate-200 shrink-0 z-10">
           <div className="flex items-center gap-3">
             {/* Le titre dynamique est injecté ici */}
-            <h2 className="text-2xl font-bold text-slate-800 tracking-tight transition-all duration-300">
+            <h2 className="text-xl font-bold text-slate-800 tracking-tight transition-all duration-300">
               {getPageTitle()}
             </h2>
           </div>

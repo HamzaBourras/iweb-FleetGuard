@@ -48,7 +48,7 @@ export default function Overview() {
       {/* En-tête de page */}
       <div className="flex justify-between items-end mb-8">
         <div>
-          <h2 className="text-xl font-bold text-slate-800 tracking-tight">Vue d'ensemble de la Flotte</h2>
+          <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">Vue d'ensemble de la Flotte</h2>
           <p className="text-slate-500 text-sm mt-1">Surveillance en temps réel de vos sites WordPress.</p>
         </div>
         <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-lg font-medium text-sm border border-blue-100">
