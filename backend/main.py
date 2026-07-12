@@ -133,27 +133,43 @@ def login_admin(credentials: schemas.AdminLogin, db: Session = Depends(get_db)):
 
 @app.get("/api/dashboard/stats")
 def get_dashboard_stats(
-    token: str = Depends(oauth2_scheme), # 🔒 Le vigile bloque si pas de token !
+    token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ):
-    # Idéalement, ici on utilise un module security.verify_token(token) 
-    # pour s'assurer que le token n'est pas expiré ou falsifié.
-    
-    # 1. Requêtes réelles à ta base PostgreSQL
     total_sites = db.query(models.ClientSite).count()
     total_alerts = db.query(models.SecurityAlert).count()
     
-    # 2. Calcul dynamique d'un score de santé (algorithme simple)
-    # S'il y a 0 alerte = 100%. Chaque alerte fait baisser le score de 2%.
     health_score_value = 100 - (total_alerts * 2)
     health_score = f"{max(0, health_score_value)}%"
     
-    # 3. On renvoie les données formatées pour React
+    today = datetime.utcnow()
+    jour_noms = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+    chart_data = []
+    
+    for i in range(6, -1, -1):
+        target_date = today - timedelta(days=i)
+        
+        start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        # --- LA CORRECTION EST ICI (timestamp au lieu de created_at) ---
+        count = db.query(models.SecurityAlert).filter(
+            models.SecurityAlert.timestamp >= start_of_day,
+            models.SecurityAlert.timestamp <= end_of_day
+        ).count()
+        
+        chart_data.append({
+            "name": jour_noms[target_date.weekday()],
+            "alertes": count
+        })
+
     return {
         "active_sites": total_sites,
         "vulnerabilities": total_alerts,
-        "health_score": health_score
+        "health_score": health_score,
+        "chart_data": chart_data
     }
+
 
 # --- 1. MODIFICATION DE LA ROUTE EXISTANTE : GET /api/sites ---
 @app.get("/api/sites")
