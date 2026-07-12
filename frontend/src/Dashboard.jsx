@@ -43,7 +43,7 @@ export default function Dashboard() {
         <div className="absolute top-0 left-0 w-full h-32 bg-blue-500/5 blur-3xl pointer-events-none"></div>
 
         <div className="relative z-10">
-          <div className="pb-8 mb-6 border-b border-slate-800/80 text-center flex justify-center">
+          <div className="pb-8 mb-6 border-b border-slate-100 text-center flex justify-center">
             <img
               src={logoImg}
               alt="Logo iweb FleetGuard"
