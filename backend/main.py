@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 import secrets
 from pydantic import BaseModel
+from datetime import datetime, timedelta
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -154,18 +155,19 @@ def get_dashboard_stats(
         "health_score": health_score
     }
 
-# Route pour récupérer tous les sites clients (protégée par JWT)
+# --- 1. MODIFICATION DE LA ROUTE EXISTANTE : GET /api/sites ---
 @app.get("/api/sites")
 def get_all_sites(
-    token: str = Depends(oauth2_scheme), # 🔒 Protection JWT active
+    token: str = Depends(oauth2_scheme), 
     db: Session = Depends(get_db)
 ):
-    # On récupère tous les sites de la base de données
-    sites = db.query(models.ClientSite).all()
-    
-    # On renvoie la liste
-    return sites
+    # NETTOYAGE AUTOMATIQUE : On supprime physiquement les sites en attente depuis plus de 12h
+    limite_retention = datetime.utcnow() - timedelta(hours=12)
+    db.query(models.ClientSite).filter(models.ClientSite.deleted_at < limite_retention).delete()
+    db.commit()
 
+    # On renvoie tous les sites restants (actifs ET en cours de suppression)
+    return db.query(models.ClientSite).all()
 
 #**** Ajout d'un nouveau site client (protégé par JWT) ****
 # --- SCHÉMA DE DONNÉES ---
@@ -173,6 +175,40 @@ def get_all_sites(
 class SiteCreate(BaseModel):
     site_name: str
     url: str
+
+# --- 2. NOUVELLE ROUTE : MISE EN CORBEILLE (SOFT DELETE) ---
+@app.delete("/api/sites/{site_id}")
+def soft_delete_site(
+    site_id: int, 
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+):
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail="Site introuvable")
+    
+    # On marque la date de suppression
+    site.deleted_at = datetime.utcnow()
+    db.commit()
+    return {"message": "Le site a été placé en corbeille pour 12 heures."}
+
+
+# --- 3. NOUVELLE ROUTE : RESTAURATION ---
+@app.put("/api/sites/{site_id}/restore")
+def restore_site(
+    site_id: int, 
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+):
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail="Site introuvable")
+    
+    # On annule la suppression
+    site.deleted_at = None
+    db.commit()
+    return {"message": "Le site a été restauré avec succès."}
+
 
 # --- ROUTE DE CRÉATION des sites ---
 @app.post("/api/sites")

@@ -10,7 +10,7 @@ export default function SitesList() {
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteUrl, setNewSiteUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // NOUVEL ÉTAT : Stockage temporaire du token en clair
   const [newGeneratedToken, setNewGeneratedToken] = useState(null);
 
@@ -28,6 +28,36 @@ export default function SitesList() {
       setError(err.message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Fonction pour déclencher la suppression (Soft Delete)
+  const handleDelete = async (siteId) => {
+    if (!window.confirm("Voulez-vous vraiment supprimer ce site ? Il sera conservé pendant 12h avant destruction définitive.")) return;
+
+    const token = localStorage.getItem('fleetguard_token');
+    try {
+      const response = await fetch(`http://localhost:8000/api/sites/${siteId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) fetchSites(); // On rafraîchit la liste
+    } catch (err) {
+      alert("Erreur lors de la suppression.");
+    }
+  };
+
+  // Fonction pour annuler la suppression
+  const handleRestore = async (siteId) => {
+    const token = localStorage.getItem('fleetguard_token');
+    try {
+      const response = await fetch(`http://localhost:8000/api/sites/${siteId}/restore`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) fetchSites(); // On rafraîchit la liste
+    } catch (err) {
+      alert("Erreur lors de la restauration.");
     }
   };
 
@@ -56,13 +86,13 @@ export default function SitesList() {
       if (!response.ok) throw new Error("Erreur lors de l'ajout du site.");
 
       const addedSite = await response.json();
-      
+
       // On rafraîchit la liste pour inclure le nouveau site
       fetchSites();
-      
+
       // On affiche l'écran de succès avec le token en clair
       setNewGeneratedToken(addedSite.secret_token);
-      
+
       // On nettoie les champs du formulaire
       setNewSiteName('');
       setNewSiteUrl('');
@@ -78,26 +108,26 @@ export default function SitesList() {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     // On détruit le token de la mémoire front-end !
-    setTimeout(() => setNewGeneratedToken(null), 300); 
+    setTimeout(() => setNewGeneratedToken(null), 300);
   };
 
   if (isLoading) return <div className="text-gray-500 animate-pulse p-6">Chargement de la flotte...</div>;
 
   return (
     <div className="relative">
-      
+
       {/* --- TABLEAU PRINCIPAL --- */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-6 border-b border-gray-200 flex justify-between items-center">
           <h3 className="text-lg font-bold text-gray-900">🌐 Parc de Sites WordPress</h3>
-          <button 
+          <button
             onClick={() => setIsModalOpen(true)}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
           >
             + Ajouter un site
           </button>
         </div>
-        
+
         {error && <div className="p-4 bg-red-50 text-red-600 border-b border-red-100">{error}</div>}
 
         <div className="overflow-x-auto">
@@ -109,6 +139,7 @@ export default function SitesList() {
                 <th className="px-6 py-4 font-semibold">URL</th>
                 <th className="px-6 py-4 font-semibold">Token Agent</th>
                 <th className="px-6 py-4 font-semibold">Statut</th>
+                <th className="px-6 py-4 font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -117,26 +148,56 @@ export default function SitesList() {
                   <td colSpan="5" className="px-6 py-8 text-center text-gray-500">Aucun site sous supervision.</td>
                 </tr>
               ) : (
-                sites.map((site) => (
-                  <tr key={site.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 text-gray-900 font-medium">#{site.id}</td>
-                    <td className="px-6 py-4 text-gray-800 font-semibold">{site.site_name}</td>
-                    <td className="px-6 py-4 text-blue-600 hover:underline">
-                      <a href={site.url} target="_blank" rel="noreferrer">{site.url}</a>
-                    </td>
-                    <td className="px-6 py-4">
-                      {/* Affichage sécurisé : on ne montre plus le token */}
-                      <span className="bg-slate-100 text-xs px-2.5 py-1.5 rounded text-slate-400 font-mono border border-slate-200 select-none">
-                        •••••••••••••••• 
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span> Actif
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                sites.map((site) => {
+                  const isDeleted = site.deleted_at !== null;
+
+                  return (
+                    <tr key={site.id} className={`transition-colors ${isDeleted ? 'bg-red-50 opacity-75' : 'hover:bg-gray-50'}`}>
+                      <td className="px-6 py-4 text-gray-900 font-medium">#{site.id}</td>
+                      <td className={`px-6 py-4 font-semibold ${isDeleted ? 'text-red-800 line-through' : 'text-gray-800'}`}>
+                        {site.site_name}
+                      </td>
+                      <td className="px-6 py-4 text-blue-600">
+                        {!isDeleted && <a href={site.url} target="_blank" rel="noreferrer" className="hover:underline">{site.url}</a>}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="bg-slate-100 text-xs px-2.5 py-1.5 rounded text-slate-400 font-mono border border-slate-200 select-none">
+                          ••••••••••••••••
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {isDeleted ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            ⏳ Destr. dans 12h
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span> Actif
+                          </span>
+                        )}
+                      </td>
+
+                      {/* NOUVELLE COLONNE ACTIONS */}
+                      <td className="px-6 py-4">
+                        {isDeleted ? (
+                          <button
+                            onClick={() => handleRestore(site.id)}
+                            className="bg-white border border-green-500 text-green-600 hover:bg-green-50 px-3 py-1.5 rounded text-xs font-bold transition-colors shadow-sm"
+                          >
+                            ♻️ Restaurer
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleDelete(site.id)}
+                            className="text-gray-400 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+                          >
+                            🗑️ Retirer
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -147,7 +208,7 @@ export default function SitesList() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            
+
             {/* Si un token vient d'être généré, on affiche l'écran de sécurité */}
             {newGeneratedToken ? (
               <div className="p-6">
@@ -155,11 +216,11 @@ export default function SitesList() {
                   ✓
                 </div>
                 <h3 className="text-xl font-bold text-center text-gray-900 mb-2">Site ajouté avec succès !</h3>
-                
+
                 <div className="bg-orange-50 border-l-4 border-orange-500 p-4 mb-6 rounded-r-lg mt-6">
                   <h4 className="text-sm font-bold text-orange-800 mb-1">⚠️ Action requise immédiatement</h4>
                   <p className="text-xs text-orange-700">
-                    Copiez le token ci-dessous pour configurer votre agent PHP. 
+                    Copiez le token ci-dessous pour configurer votre agent PHP.
                     <strong> Pour des raisons de sécurité, il ne sera plus jamais affiché.</strong>
                   </p>
                 </div>
@@ -168,7 +229,7 @@ export default function SitesList() {
                   <code className="text-green-400 font-mono text-sm break-all">
                     {newGeneratedToken}
                   </code>
-                  <button 
+                  <button
                     onClick={() => {
                       navigator.clipboard.writeText(newGeneratedToken);
                       alert("Token copié dans le presse-papier !");
@@ -180,7 +241,7 @@ export default function SitesList() {
                   </button>
                 </div>
 
-                <button 
+                <button
                   onClick={handleCloseModal}
                   className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors"
                 >
@@ -194,12 +255,12 @@ export default function SitesList() {
                   <h3 className="text-xl font-bold text-gray-900">Nouveau Site Cible</h3>
                   <p className="text-sm text-gray-500 mt-1">Provisionnez une nouvelle cible pour la flotte.</p>
                 </div>
-                
+
                 <form onSubmit={handleAddSite} className="p-6 space-y-4">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Nom du projet</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       required
                       value={newSiteName}
                       onChange={(e) => setNewSiteName(e.target.value)}
@@ -207,11 +268,11 @@ export default function SitesList() {
                       placeholder="Ex: Boutique E-commerce JLM"
                     />
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">URL (https://...)</label>
-                    <input 
-                      type="url" 
+                    <input
+                      type="url"
                       required
                       value={newSiteUrl}
                       onChange={(e) => setNewSiteUrl(e.target.value)}
@@ -221,14 +282,14 @@ export default function SitesList() {
                   </div>
 
                   <div className="flex gap-3 pt-4">
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setIsModalOpen(false)}
                       className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
                     >
                       Annuler
                     </button>
-                    <button 
+                    <button
                       type="submit"
                       disabled={isSubmitting}
                       className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:bg-blue-400"

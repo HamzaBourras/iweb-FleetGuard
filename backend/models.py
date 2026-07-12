@@ -50,6 +50,8 @@ class ClientSite(Base):
     site_name = Column(String)
 
     alerts = relationship("SecurityAlert", back_populates="site")
+    # NOUVELLE COLONNE : Stocke la date de demande de suppression
+    deleted_at = Column(DateTime, nullable=True, default=None)
 
 
 class SecurityAlert(Base):
