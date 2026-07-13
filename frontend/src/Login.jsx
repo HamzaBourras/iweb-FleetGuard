@@ -49,7 +49,7 @@ export default function Login() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 border border-gray-100">
         
-        <div className="text-center mb-8 flex flex-col items-center">
+        <div className="text-center mb-4 flex flex-col items-center border-b border-gray-200 pb-4">
           <img 
             src={logoImg} 
             alt="Logo iweb FleetGuard" 

@@ -3,6 +3,7 @@ import Login from './Login';
 import Dashboard from './Dashboard';
 import ProtectedRoute from './ProtectedRoute';
 import PublicRoute from './PublicRoute'; // <-- 1. Nouvelle importation
+import Guide from './Guide';
 
 // Importation de nos nouvelles vues
 import Overview from './Overview';
@@ -32,6 +33,8 @@ export default function App() {
           {/* Les sous-routes (ex: /dashboard/sites) */}
           <Route path="sites" element={<SitesList />} />
           <Route path="alerts" element={<SecurityAlerts />} />
+          {/* ✨ 2. On ajoute la route pour le guide */}
+          <Route path="guide" element={<Guide />} />
         </Route>
 
         {/* Redirection automatique par défaut */}
