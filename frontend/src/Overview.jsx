@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, AlertTriangle, Activity, Server } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Activity, Server, LayoutDashboard } from 'lucide-react';
 
 export default function Overview() {
   const [stats, setStats] = useState({
@@ -31,8 +31,9 @@ export default function Overview() {
 
   if (stats.isLoading) {
     return (
-      <div className="flex items-center justify-center h-[50vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+      <div className="flex flex-col items-center justify-center h-64 space-y-4 animate-pulse text-slate-500">
+        <LayoutDashboard className="w-12 h-12 md:w-12 md:h-12 text-blue-300" />
+        <p className="font-medium text-sm md:text-base">Chargement de la vue d'ensemble...</p>
       </div>
     );
   }
@@ -43,7 +44,7 @@ export default function Overview() {
 
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in">
-      
+
       {/* 📱 En-tête de page : Empilé sur mobile, aligné sur Desktop */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-end gap-4 mb-4 md:mb-8">
         <div>
@@ -59,7 +60,7 @@ export default function Overview() {
 
       {/* 📊 Section 1 : Les Cartes de KPI (1 colonne sur mobile, 3 sur Desktop) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-        
+
         {/* Carte 1 : Sites Actifs */}
         <div className="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-all duration-300 hover:-translate-y-1 relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -100,10 +101,10 @@ export default function Overview() {
             <span className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><Activity className="w-5 h-5 md:w-6 md:h-6" /></span>
           </div>
           <div className={`text-3xl md:text-4xl font-black ${healthColor}`}>{stats.health_score}</div>
-          
+
           <div className="w-full bg-slate-100 rounded-full h-1.5 mt-4">
-            <div 
-              className={`h-1.5 rounded-full ${healthValue > 80 ? 'bg-emerald-500' : 'bg-red-500'}`} 
+            <div
+              className={`h-1.5 rounded-full ${healthValue > 80 ? 'bg-emerald-500' : 'bg-red-500'}`}
               style={{ width: stats.health_score }}
             ></div>
           </div>
@@ -116,41 +117,41 @@ export default function Overview() {
           <h3 className="text-base md:text-lg font-bold text-slate-800">Volume d'Alertes (7 derniers jours)</h3>
           <p className="text-xs md:text-sm text-slate-500">Menaces interceptées par iwebCreative Security Agent</p>
         </div>
-        
+
         {/* Hauteur ajustée pour mobile (h-56) et desktop (md:h-72) */}
         <div className="h-56 md:h-72 w-full -ml-4 md:ml-0">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={stats.chart_data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorAttaques" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <XAxis 
-                dataKey="name" 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{fill: '#94a3b8', fontSize: 12}} 
-                dy={10} 
+              <XAxis
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: '#94a3b8', fontSize: 12 }}
+                dy={10}
               />
-              <YAxis 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{fill: '#94a3b8', fontSize: 12}} 
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: '#94a3b8', fontSize: 12 }}
               />
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-              <Tooltip 
+              <Tooltip
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                 itemStyle={{ color: '#0f172a', fontWeight: 'bold' }}
               />
-              <Area 
-                type="monotone" 
+              <Area
+                type="monotone"
                 dataKey="alertes"
-                stroke="#ef4444" 
+                stroke="#ef4444"
                 strokeWidth={3}
-                fillOpacity={1} 
-                fill="url(#colorAttaques)" 
+                fillOpacity={1}
+                fill="url(#colorAttaques)"
                 animationDuration={1500}
                 animationEasing="ease-out"
               />

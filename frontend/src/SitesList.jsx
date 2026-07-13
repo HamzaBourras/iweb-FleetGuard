@@ -105,7 +105,7 @@ export default function SitesList() {
 
   if (isLoading) return (
     <div className="flex flex-col items-center justify-center h-64 space-y-4 animate-pulse text-slate-500">
-      <Server className="w-12 h-12 text-blue-300" />
+      <Globe className="w-12 h-12 md:w-12 md:h-12 text-blue-300" />
       <p className="font-medium text-sm md:text-base">Chargement de la flotte...</p>
     </div>
   );

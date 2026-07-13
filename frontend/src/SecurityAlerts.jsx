@@ -79,7 +79,7 @@ export default function SecurityAlerts() {
   // État de chargement SOC
   if (isLoading) return (
     <div className="flex flex-col items-center justify-center h-64 space-y-4 animate-pulse text-slate-500">
-      <ShieldAlert className="w-10 h-10 md:w-12 md:h-12 text-slate-300" />
+      <ShieldAlert className="w-12 h-12 md:w-12 md:h-12 text-blue-300" />
       <p className="font-medium tracking-wide uppercase text-xs md:text-sm text-center px-4">Analyse des flux de sécurité...</p>
     </div>
   );
