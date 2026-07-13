@@ -112,7 +112,7 @@ export default function Dashboard() {
         <div className="relative z-10">
           <button
             onClick={handleLogout}
-            className="cursor-pointer group w-full bg-slate-800/50 hover:bg-red-500/10 border border-slate-700/50 hover:border-red-500/30 text-slate-300 hover:text-red-500 font-bold py-3 px-4 rounded-xl transition-all duration-300 ease-out flex items-center justify-center gap-2 mt-4"
+            className="cursor-pointer group w-full bg-slate-800/50 hover:bg-red-500/10 border border-slate-600 hover:border-red-500/30 text-slate-300 hover:text-red-500 font-bold py-3 px-4 rounded-xl transition-all duration-300 ease-out flex items-center justify-center gap-2 mt-4"
           >
             <LogOut className="w-5 h-5 group-hover:-translate-x-1 transition-transform duration-300" />
             <span>Déconnexion</span>
