@@ -286,6 +286,24 @@ def create_site(
     }
 
 
+# --- ROUTE DE RÉCUPÉRATION DES ALERTES D'UN ACTIF SPÉCIFIQUE ---
+@app.get("/api/sites/{site_id}/alerts")
+def get_site_alerts(
+    site_id: int, 
+    limit: int = 10,
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+):
+    # On récupère les X dernières alertes de ce site spécifique, de la plus récente à la plus ancienne
+    alerts = db.query(models.SecurityAlert)\
+        .filter(models.SecurityAlert.site_id == site_id)\
+        .order_by(models.SecurityAlert.timestamp.desc())\
+        .limit(limit)\
+        .all()
+    
+    return alerts
+
+
 # --- ROUTE DE RÉCUPÉRATION DES ALERTES POUR LE DASHBOARD ---
 @app.get("/api/alerts")
 def get_all_alerts(
