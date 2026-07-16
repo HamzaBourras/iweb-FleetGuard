@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye } from 'lucide-react';
 
 export default function SitesList() {
+  const navigate = useNavigate();
   const [sites, setSites] = useState([]);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -80,7 +82,7 @@ export default function SitesList() {
 
       if (!response.ok) throw new Error("Erreur lors de l'ajout du site.");
       const addedSite = await response.json();
-      
+
       fetchSites();
       setNewGeneratedToken(addedSite.secret_token);
       setNewSiteName('');
@@ -112,7 +114,7 @@ export default function SitesList() {
 
   return (
     <div className="relative animate-fade-in space-y-4 md:space-y-6">
-      
+
       {/* --- EN-TÊTE DE PAGE (Adaptatif) --- */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-end gap-4 mb-4 md:mb-8">
         <div>
@@ -130,7 +132,7 @@ export default function SitesList() {
 
       {/* --- TABLEAU PRINCIPAL --- */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        {error && <div className="p-4 bg-red-50 text-red-600 border-b border-red-100 flex items-center gap-2 text-sm"><ShieldAlert className="w-5 h-5 shrink-0"/>{error}</div>}
+        {error && <div className="p-4 bg-red-50 text-red-600 border-b border-red-100 flex items-center gap-2 text-sm"><ShieldAlert className="w-5 h-5 shrink-0" />{error}</div>}
 
         {/* Conteneur avec scroll horizontal pour mobile */}
         <div className="overflow-x-auto">
@@ -195,25 +197,40 @@ export default function SitesList() {
                       </td>
 
                       <td className="px-4 md:px-6 py-4 text-right">
-                        {isDeleted ? (
+
+                        <div className="flex items-center justify-end gap-2">
+
+                          {/* ✨ NOUVEAU BOUTON DÉTAILS */}
                           <button
-                            onClick={() => handleRestore(site.id)}
-                            className="inline-flex items-center justify-center gap-1.5 bg-white border border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:shadow-sm p-2 md:px-3 md:py-1.5 rounded-lg text-xs font-bold transition-all"
-                            title="Restaurer"
+                            onClick={() => navigate(`/dashboard/sites/${site.id}`)}
+                            className="inline-flex items-center justify-center gap-1.5 bg-white border border-blue-500 text-blue-600 hover:bg-blue-50 hover:shadow-sm p-2 md:px-3 md:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                            title="Voir les détails de l'actif"
                           >
-                            <RefreshCw className="w-4 h-4 md:w-3.5 md:h-3.5" /> 
-                            <span className="hidden sm:inline">Restaurer</span>
+                            <Eye className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                            <span className="hidden sm:inline">Détails</span>
                           </button>
-                        ) : (
-                          <button
-                            onClick={() => handleDelete(site.id)}
-                            className="inline-flex items-center justify-center gap-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 p-2 md:px-3 md:py-1.5 rounded-lg text-xs font-bold transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
-                            title="Supprimer"
-                          >
-                            <Trash2 className="w-4 h-4" /> 
-                            <span className="hidden sm:inline">Supprimer</span>
-                          </button>
-                        )}
+
+                          {isDeleted ? (
+                            <button
+                              onClick={() => handleRestore(site.id)}
+                              className="inline-flex items-center justify-center gap-1.5 bg-white border border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:shadow-sm p-2 md:px-3 md:py-1.5 rounded-lg text-xs font-bold transition-all"
+                              title="Restaurer"
+                            >
+                              <RefreshCw className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                              <span className="hidden sm:inline">Restaurer</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleDelete(site.id)}
+                              className="inline-flex items-center justify-center gap-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 p-2 md:px-3 md:py-1.5 rounded-lg text-xs font-bold transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
+                              title="Supprimer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              <span className="hidden sm:inline">Supprimer</span>
+                            </button>
+                          )}
+                        </div>
+
                       </td>
                     </tr>
                   );
@@ -227,32 +244,32 @@ export default function SitesList() {
       {/* --- FENÊTRE MODALE --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          
-          <div 
+
+          <div
             className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300"
             onClick={() => !isSubmitting && !newGeneratedToken && setIsModalOpen(false)}
           ></div>
 
           <div className="relative bg-white rounded-2xl md:rounded-3xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.3)] w-full max-w-xl overflow-hidden transform transition-all animate-in zoom-in-[0.97] fade-in duration-300 border border-slate-100 max-h-[90vh] overflow-y-auto">
-            
+
             {newGeneratedToken ? (
               <div className="p-6 md:p-8">
                 <div className="mx-auto w-12 h-12 md:w-16 md:h-16 bg-emerald-50 border border-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-4 md:mb-6 shadow-sm relative">
                   <span className="absolute inset-0 rounded-full animate-ping bg-emerald-400 opacity-20 duration-1000"></span>
                   <CheckCircle2 className="w-6 h-6 md:w-8 md:h-8 relative z-10" />
                 </div>
-                
+
                 <h3 className="text-xl md:text-2xl font-black text-center text-slate-800 tracking-tight mb-1 md:mb-2">Site Ajouté</h3>
                 <p className="text-center text-slate-500 mb-6 md:mb-8 text-xs md:text-sm font-medium">L'environnement est prêt à recevoir les logs de sécurité.</p>
 
                 <div className="bg-amber-50/80 border border-amber-200/60 p-3 md:p-4 mb-4 md:mb-6 rounded-xl md:rounded-2xl relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-400"></div>
                   <h4 className="text-xs md:text-sm font-bold text-amber-900 mb-1 flex items-center gap-1.5 md:gap-2">
-                    <ShieldAlert className="w-3.5 h-3.5 md:w-4 md:h-4 text-amber-600 shrink-0" /> 
+                    <ShieldAlert className="w-3.5 h-3.5 md:w-4 md:h-4 text-amber-600 shrink-0" />
                     Sauvegarde Cryptographique Requise
                   </h4>
                   <p className="text-[10px] md:text-xs text-amber-800/80 leading-relaxed ml-5 md:ml-6">
-                    Copiez ce jeton pour configurer l'agent distant. 
+                    Copiez ce jeton pour configurer l'agent distant.
                     <span className="block mt-1 font-bold text-amber-900">Il ne sera affiché qu'une seule fois.</span>
                   </p>
                 </div>
@@ -264,11 +281,10 @@ export default function SitesList() {
                   </code>
                   <button
                     onClick={handleCopyToken}
-                    className={`p-2 md:p-2.5 rounded-lg md:rounded-xl transition-all duration-300 shrink-0 flex items-center gap-1.5 md:gap-2 font-bold text-xs md:text-sm ${
-                      copied 
-                      ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/50' 
+                    className={`p-2 md:p-2.5 rounded-lg md:rounded-xl transition-all duration-300 shrink-0 flex items-center gap-1.5 md:gap-2 font-bold text-xs md:text-sm ${copied
+                      ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/50'
                       : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
-                    }`}
+                      }`}
                     title="Copier le jeton"
                   >
                     {copied ? (
