@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from cryptography.fernet import Fernet
@@ -52,6 +52,13 @@ class ClientSite(Base):
     alerts = relationship("SecurityAlert", back_populates="site")
     # NOUVELLE COLONNE : Stocke la date de demande de suppression
     deleted_at = Column(DateTime, nullable=True, default=None)
+
+    last_scan_at = Column(DateTime, nullable=True)
+    wp_version = Column(String, nullable=True)
+    php_version = Column(String, nullable=True)
+    health_score = Column(Integer, default=100)
+    # Je te conseille aussi d'ajouter une colonne pour stocker la liste des plugins :
+    plugins_inventory = Column(JSON, nullable=True)
 
 
 class SecurityAlert(Base):

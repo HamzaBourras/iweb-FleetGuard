@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, APIRouter
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
@@ -7,6 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 import secrets
 from pydantic import BaseModel
 from datetime import datetime, timedelta
+import httpx
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -62,7 +63,6 @@ def read_root():
 # On indique à FastAPI quelle route délivre les tokens
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
-
 # 4. Route pour recevoir les alertes de l'agent PHP
 @app.post("/api/alerts")
 def receive_agent_alerts(
@@ -75,20 +75,25 @@ def receive_agent_alerts(
 
     token_recu = authorization.split(" ")[1]
 
-    # --- LA NOUVELLE LOGIQUE DE SÉCURITÉ EST ICI ---
+    # --- LOGIQUE DE SÉCURITÉ (FERNET) ---
     sites = db.query(models.ClientSite).all()
     site_client = None
     
-    # On boucle sur les sites et on utilise la fonction de vérification cryptographique
     for site in sites:
-        if security.verify_password(token_recu, site.secret_token):
-            site_client = site
-            break
+        try:
+            decrypted_token = security.decrypt_token(site.secret_token)
+            if token_recu == decrypted_token:
+                site_client = site
+                break
+        except Exception:
+            continue
 
     if not site_client:
         raise HTTPException(status_code=403, detail="Token refusé : Site inconnu, token invalide ou accès révoqué")
 
-    # ... (Le reste du code d'enregistrement de l'alerte reste identique) ...
+    # --- ENREGISTREMENT DES ALERTES ET CALCUL DU MALUS ---
+    penalite_score = 0
+
     for event in payload.security_events:
         nouvelle_alerte = models.SecurityAlert(
             site_id=site_client.id,
@@ -98,17 +103,37 @@ def receive_agent_alerts(
             ip_address=event.ip_address
         )
         db.add(nouvelle_alerte)
-    
+
+        # Calcul de la pénalité selon la gravité de l'alerte
+        if event.severity == "critical":
+            penalite_score += 15
+        elif event.severity == "high":
+            penalite_score += 10
+        elif event.severity == "medium":
+            penalite_score += 5
+        else:
+            penalite_score += 2
+            
+    # --- MISE À JOUR DU SCORE DE SANTÉ DU SITE ---
+    # On récupère le score actuel (ou 100 par défaut s'il est vide)
+    score_actuel = getattr(site_client, 'health_score', 100)
+    if score_actuel is None:
+        score_actuel = 100
+        
+    # On soustrait la pénalité en s'assurant que le score ne descende jamais en dessous de 0
+    nouveau_score = max(0, score_actuel - penalite_score)
+    site_client.health_score = nouveau_score
+
+    # On sauvegarde tout en une seule transaction (les alertes + le nouveau score)
     db.commit()
 
     return {
         "status": "success",
-        "message": f"{len(payload.security_events)} alerte(s) enregistrée(s) avec succès pour le site ID {site_client.id}"
+        "message": f"{len(payload.security_events)} alerte(s) enregistrée(s). Score de santé mis à jour à {nouveau_score}/100."
     }
 
 
 # --- ROUTES D'AUTHENTIFICATION DU TABLEAU DE BORD ---
-
 @app.post("/api/auth/login", response_model=schemas.Token)
 def login_admin(credentials: schemas.AdminLogin, db: Session = Depends(get_db)):
     # 1. On cherche l'administrateur par son email
@@ -236,14 +261,14 @@ def create_site(
     # 1. Génération du token en clair (celui qu'on va montrer à l'admin)
     raw_token = f"IWEB_{secrets.token_urlsafe(32)}"
     
-    # 2. Hachage cryptographique du token (celui qu'on garde)
-    hashed_token = security.get_password_hash(raw_token)
+    # 2. CHIFFREMENT SYMÉTRIQUE (Réversible) au lieu du hachage
+    encrypted_token = security.encrypt_token(raw_token)
     
     # 3. Préparation et sauvegarde dans PostgreSQL avec le hash
     nouveau_site = models.ClientSite(
         site_name=site_data.site_name,
         url=site_data.url,
-        secret_token=hashed_token  # 🔒 Le serveur ne connaît plus le vrai token
+        secret_token=encrypted_token  # 🔒 Le serveur ne connaît plus le vrai token
     )
     
     db.add(nouveau_site)
@@ -285,11 +310,121 @@ def get_all_alerts(
             "severity": alerte.severity,
             "message": alerte.message,
             "ip_address": alerte.ip_address,
-            "timestamp": alerte.timestamp # <-- CHANGEMENT ICI
+            "timestamp": alerte.timestamp, # <-- CHANGEMENT ICI
+            "site_id": alerte.site_id
         })
 
     return resultats
 
+
+# --- ROUTE DE RÉCUPÉRATION D'UN SEUL SITE (VUE DÉTAILLÉE) ---
+@app.get("/api/sites/{site_id}")
+def get_single_site(
+    site_id: int, 
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+):
+    # 1. Chercher le site ciblé dans la base de données
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Actif introuvable dans la flotte.")
+        
+    # 2. Calculer dynamiquement le nombre d'alertes associées à ce site
+    alerts_count = db.query(models.SecurityAlert).filter(models.SecurityAlert.site_id == site_id).count()
+    
+    # 3. Construire le dictionnaire de réponse attendu par React
+    return {
+        "id": site.id,
+        "site_name": site.site_name,
+        "url": site.url,
+        "status": "actif" if not site.deleted_at else "corbeille",
+        # On utilise getattr pour éviter les erreurs si les colonnes n'existent pas encore
+        "health_score": getattr(site, 'health_score', 0),
+        "wp_version": getattr(site, 'wp_version', None),
+        "php_version": getattr(site, 'php_version', None),
+        "last_scan_at": getattr(site, 'last_scan_at', None),
+        "alerts_count": alerts_count
+    }
+
+
+# --- ROUTE DE SCAN FORÉNSIQUE D'UN SITE ---
+@app.post("/api/sites/{site_id}/scan")
+async def scan_site(
+    site_id: int, 
+    db: Session = Depends(get_db), 
+    # current_user: models.User = Depends(get_current_user)
+):
+    # 1. Vérifier que le site existe dans la base de données
+    site = db.query(models.ClientSite).filter(models.Site.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
+
+    # 2. Construire l'URL de l'endpoint de santé de l'agent PHP
+    # On utilise .rstrip('/') pour éviter les doubles slashes (ex: https://site.com//wp-json/...)
+    base_url = site.url.rstrip('/')
+    health_endpoint = f"{base_url}/wp-json/iwebcreative/v1/health"
+
+    # ✨ DÉCHIFFREMENT À LA VOLÉE
+    # On déchiffre le jeton stocké en BDD pour prouver notre identité à l'agent PHP
+    try:
+        decrypted_token = security.decrypt_token(site.secret_token)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Erreur interne : Impossible de déchiffrer le jeton de l'actif.")
+
+    # 3. Interroger l'agent PHP de manière asynchrone
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                health_endpoint,
+                headers={"Authorization": f"Bearer {decrypted_token}"} # <-- On utilise le jeton déchiffré
+            )
+            
+            # Vérification de l'authentification
+            if response.status_code == 401:
+                raise HTTPException(
+                    status_code=401, 
+                    detail="Accès refusé par la cible : Jeton de sécurité invalide ou révoqué."
+                )
+            
+            # Déclenche une exception pour les autres erreurs HTTP (500, 404, 403)
+            response.raise_for_status()
+            
+            scan_data = response.json()
+
+    except httpx.ConnectTimeout:
+        raise HTTPException(status_code=504, detail="Délai d'attente dépassé : Le site cible ne répond pas.")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"Erreur de communication avec la cible : {str(exc)}")
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail="La sonde PHP a retourné une erreur inattendue.")
+
+    # 4. Mettre à jour les données du site dans PostgreSQL
+    # (Adapte ces lignes selon les colonnes exactes définies dans ton models.Site)
+    try:
+        # Exemple de mise à jour des métriques
+        site.last_scan_at = datetime.utcnow()
+        site.wp_version = scan_data.get("core", {}).get("wp_version")
+        site.php_version = scan_data.get("core", {}).get("php_version")
+        
+        # Logique simple pour le score de santé (à enrichir plus tard)
+        # Si le scan passe, on remonte le score de base
+        site.health_score = 100 
+        
+        # Enregistrement en BDD
+        db.commit()
+        db.refresh(site)
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erreur lors de la sauvegarde des résultats du scan.")
+
+    # 5. Retourner le résultat au Frontend
+    return {
+        "message": "Analyse forensique terminée avec succès",
+        "telemetry": scan_data
+    }
 
 
 
