@@ -56,6 +56,10 @@ function iweb_get_health_data() {
     // Récupération de tous les plugins installés et de la liste de ceux qui sont actifs
     $all_plugins = get_plugins();
     $active_plugins_list = get_option( 'active_plugins', [] );
+
+    // Récupération des données du dernier login admin
+    $last_admin_time = get_option( 'iweb_last_admin_login_time', null );
+    $last_admin_ip = get_option( 'iweb_last_admin_login_ip', null );
     
     $formatted_plugins = [];
 
@@ -68,6 +72,7 @@ function iweb_get_health_data() {
             'version' => $plugin_data['Version'],
             'status'  => $is_active ? 'active' : 'inactive',
             'path'    => $plugin_path
+
         ];
     }
 
@@ -86,7 +91,10 @@ function iweb_get_health_data() {
             'php_version' => phpversion(),
         ],
         'plugins'         => $formatted_plugins,
-        'security_events' => $security_events // <-- Les événements sont maintenant envoyés au Dashboard !
+        'security_events' => $security_events, // <-- Les événements sont maintenant envoyés au Dashboard !
+        // ✨ NOUVEAU : On ajoute les données d'audit
+        'last_admin_login'=> $last_admin_time,
+        'last_admin_ip'   => $last_admin_ip
     ] );
 }
 
@@ -254,3 +262,16 @@ add_action( 'load-theme-editor.php', function() {
 add_action( 'load-plugin-editor.php', function() {
     iweb_log_security_event( 'file_editor_accessed', 'critical', "L'editeur de plugins interne WordPress a ete ouvert." );
 });
+
+
+// K. Suivi d'Audit : Enregistrement du dernier login administrateur réussi
+add_action( 'wp_login', function( $user_login, $user ) {
+    // On vérifie si l'utilisateur qui vient de se connecter a le rôle d'administrateur
+    if ( in_array( 'administrator', (array) $user->roles ) ) {
+        $ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field($_SERVER['REMOTE_ADDR']) : 'IP_Inconnue';
+        
+        // On sauvegarde l'heure et l'IP dans la base de données de WordPress (table wp_options)
+        update_option( 'iweb_last_admin_login_time', current_time( 'mysql' ) );
+        update_option( 'iweb_last_admin_login_ip', $ip );
+    }
+}, 10, 2 );
