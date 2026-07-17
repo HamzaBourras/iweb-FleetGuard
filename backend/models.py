@@ -57,8 +57,10 @@ class ClientSite(Base):
     wp_version = Column(String, nullable=True)
     php_version = Column(String, nullable=True)
     health_score = Column(Integer, default=100)
-    # Je te conseille aussi d'ajouter une colonne pour stocker la liste des plugins :
+    #colonne pour stocker la liste des plugins :
     plugins_inventory = Column(JSON, nullable=True)
+    last_admin_login = Column(DateTime, nullable=True)
+    last_admin_ip = Column(String, nullable=True)
 
 
 class SecurityAlert(Base):

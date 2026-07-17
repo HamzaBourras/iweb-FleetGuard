@@ -363,7 +363,10 @@ def get_single_site(
         "php_version": getattr(site, 'php_version', None),
         "last_scan_at": getattr(site, 'last_scan_at', None),
         "plugins_inventory": getattr(site, 'plugins_inventory', []), 
-        "alerts_count": alerts_count
+        "alerts_count": alerts_count,
+        # ✨ NOUVEAU : Envoi au Frontend
+        "last_admin_login": getattr(site, 'last_admin_login', None),
+        "last_admin_ip": getattr(site, 'last_admin_ip', None)
     }
 
 
@@ -426,6 +429,15 @@ async def scan_site(
         site.php_version = scan_data.get("core", {}).get("php_version")
         # ✨ NOUVEAU : Sauvegarde de la liste des plugins
         site.plugins_inventory = scan_data.get("plugins", []) 
+
+        # ✨ NOUVEAU : Enregistrement de l'audit Admin
+        # On convertit la chaîne MySQL en objet datetime Python si elle existe
+        admin_login_str = scan_data.get("last_admin_login")
+        if admin_login_str:
+            site.last_admin_login = datetime.strptime(admin_login_str, '%Y-%m-%d %H:%M:%S')
+            
+        site.last_admin_ip = scan_data.get("last_admin_ip")
+        # ------------------------------------------------
         
         # site.health_score = 100 
         
