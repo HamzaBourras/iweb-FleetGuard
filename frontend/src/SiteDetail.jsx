@@ -10,7 +10,8 @@ import {
   Server,
   AlertTriangle,
   RefreshCw,
-  CheckCircle2
+  CheckCircle2,
+  Layers, Terminal, Box, Play, Square
 } from 'lucide-react';
 
 export default function SiteDetail() {
@@ -23,7 +24,12 @@ export default function SiteDetail() {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
 
+  // État pour stocker les alertes reçues de l'agent PHP
   const [alerts, setAlerts] = useState([]);
+
+  // 🧠 Logique de détection des versions obsolètes (Hardening)
+  const isPhpObsolete = site?.php_version && (site.php_version.startsWith('7.') || site.php_version.startsWith('5.'));
+  const plugins = site?.plugins_inventory || [];
 
   // 1. Fonction pour charger les données de l'actif depuis FastAPI
   const fetchSiteDetails = async () => {
@@ -247,6 +253,102 @@ const getPlaybook = (eventType) => {
         </div>
 
       </div>
+
+{/* --- ZONE 3 : SBOM (Inventaire Technologique) --- */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
+        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Layers className="w-6 h-6 text-blue-500" />
+            <h3 className="text-lg font-bold text-slate-800">Inventaire Technologique (SBOM)</h3>
+          </div>
+          <span className="text-sm font-medium text-slate-500 bg-slate-200/50 px-3 py-1 rounded-full">
+            {plugins.length} extensions détectées
+          </span>
+        </div>
+
+        <div className="p-6">
+          {/* Noyau & Serveur */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-8">
+            {/* Version WordPress */}
+            <div className="flex items-center justify-between p-4 border border-slate-200 rounded-xl bg-slate-50/30">
+              <div className="flex items-center gap-3">
+                <Globe className="w-5 h-5 text-slate-400" />
+                <div>
+                  <p className="text-sm font-bold text-slate-700">Noyau WordPress</p>
+                  <p className="text-xs text-slate-500">CMS</p>
+                </div>
+              </div>
+              <span className="font-mono font-bold bg-slate-100 px-3 py-1.5 rounded text-slate-700 text-sm">
+                {site?.wp_version ? `v${site.wp_version}` : 'Inconnue'}
+              </span>
+            </div>
+
+            {/* Version PHP avec alerte si obsolète */}
+            <div className={`flex items-center justify-between p-4 border rounded-xl ${isPhpObsolete ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50/30'}`}>
+              <div className="flex items-center gap-3">
+                <Terminal className={`w-5 h-5 ${isPhpObsolete ? 'text-red-500' : 'text-slate-400'}`} />
+                <div>
+                  <p className={`text-sm font-bold ${isPhpObsolete ? 'text-red-700' : 'text-slate-700'}`}>Environnement PHP</p>
+                  {isPhpObsolete && <p className="text-xs text-red-500 font-semibold mt-0.5">Obsolète (Fin de vie)</p>}
+                </div>
+              </div>
+              <span className={`font-mono font-bold px-3 py-1.5 rounded text-sm ${isPhpObsolete ? 'bg-red-200 text-red-800' : 'bg-slate-100 text-slate-700'}`}>
+                {site?.php_version || 'Inconnue'}
+              </span>
+            </div>
+          </div>
+
+          {/* Liste des Plugins */}
+          <div>
+            <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+              <Box className="w-4 h-4 text-slate-400"/> Cartographie des Extensions
+            </h4>
+            
+            {plugins.length === 0 ? (
+              <div className="text-center p-8 border border-dashed border-slate-200 rounded-xl text-slate-500 text-sm">
+                Aucune extension détectée ou le scan n'a pas encore été lancé.
+              </div>
+            ) : (
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold">Nom de l'extension</th>
+                      <th className="px-4 py-3 font-semibold w-32">Version</th>
+                      <th className="px-4 py-3 font-semibold w-32 text-right">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {plugins.map((plugin, index) => (
+                      <tr key={index} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 font-medium text-slate-700">
+                          {plugin.name}
+                          <div className="text-xs text-slate-400 font-mono mt-0.5">{plugin.path.split('/')[0]}</div>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-slate-500 text-xs">
+                          {plugin.version}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {plugin.status === 'active' ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">
+                              <Play className="w-3 h-3" /> Actif
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200">
+                              <Square className="w-3 h-3" /> Inactif
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
 
       {/* --- ZONE : DANGERS & RECOMMANDATIONS FORENSIQUES --- */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">

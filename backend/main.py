@@ -362,6 +362,7 @@ def get_single_site(
         "wp_version": getattr(site, 'wp_version', None),
         "php_version": getattr(site, 'php_version', None),
         "last_scan_at": getattr(site, 'last_scan_at', None),
+        "plugins_inventory": getattr(site, 'plugins_inventory', []), 
         "alerts_count": alerts_count
     }
 
@@ -374,7 +375,7 @@ async def scan_site(
     # current_user: models.User = Depends(get_current_user)
 ):
     # 1. Vérifier que le site existe dans la base de données
-    site = db.query(models.ClientSite).filter(models.Site.id == site_id).first()
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
     
     if not site:
         raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
@@ -419,18 +420,15 @@ async def scan_site(
         raise HTTPException(status_code=exc.response.status_code, detail="La sonde PHP a retourné une erreur inattendue.")
 
     # 4. Mettre à jour les données du site dans PostgreSQL
-    # (Adapte ces lignes selon les colonnes exactes définies dans ton models.Site)
     try:
-        # Exemple de mise à jour des métriques
         site.last_scan_at = datetime.utcnow()
         site.wp_version = scan_data.get("core", {}).get("wp_version")
         site.php_version = scan_data.get("core", {}).get("php_version")
+        # ✨ NOUVEAU : Sauvegarde de la liste des plugins
+        site.plugins_inventory = scan_data.get("plugins", []) 
         
-        # Logique simple pour le score de santé (à enrichir plus tard)
-        # Si le scan passe, on remonte le score de base
-        site.health_score = 100 
+        # site.health_score = 100 
         
-        # Enregistrement en BDD
         db.commit()
         db.refresh(site)
         
