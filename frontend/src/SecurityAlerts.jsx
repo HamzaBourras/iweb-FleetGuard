@@ -9,7 +9,9 @@ import {
   Globe,
   CheckCircle2,
   AlertTriangle,
-  Eye
+  Eye,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 export default function SecurityAlerts() {
@@ -17,6 +19,14 @@ export default function SecurityAlerts() {
   const [alerts, setAlerts] = useState([]);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+
+  const [alertPage, setAlertPage] = useState(1);
+  const alertsPerPage = 10;
+  const totalAlertPages = Math.ceil(alerts.length / alertsPerPage);
+  const currentAlerts = alerts.slice(
+    (alertPage - 1) * alertsPerPage,
+    alertPage * alertsPerPage
+  );
 
   useEffect(() => {
     const fetchAlerts = async () => {
@@ -145,7 +155,7 @@ export default function SecurityAlerts() {
                   </td>
                 </tr>
               ) : (
-                alerts.map((alert) => (
+                currentAlerts.map((alert) => (
                   <tr key={alert.id} className="group hover:bg-slate-50 transition-colors duration-200">
 
                     {/* Date */}
@@ -198,6 +208,28 @@ export default function SecurityAlerts() {
               )}
             </tbody>
           </table>
+          {/* ✨ NOUVEAU : Contrôles de pagination pour les alertes */}
+        {totalAlertPages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-slate-100 bg-slate-50/50">
+            <button
+              onClick={() => setAlertPage(prev => Math.max(prev - 1, 1))}
+              disabled={alertPage === 1}
+              className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-orange-600"
+            >
+              <ChevronLeft className="w-4 h-4" /> Précédent
+            </button>
+            <span className="text-sm text-slate-500 font-medium">
+              Page {alertPage} sur {totalAlertPages}
+            </span>
+            <button
+              onClick={() => setAlertPage(prev => Math.min(prev + 1, totalAlertPages))}
+              disabled={alertPage === totalAlertPages}
+              className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-orange-600"
+            >
+              Suivant <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         </div>
       </div>
     </div>

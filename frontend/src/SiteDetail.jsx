@@ -11,7 +11,9 @@ import {
   AlertTriangle,
   RefreshCw,
   CheckCircle2,
-  Layers, Terminal, Box, Play, Square
+  Layers, Terminal, Box, Play, Square,
+  ChevronLeft, 
+  ChevronRight
 } from 'lucide-react';
 
 export default function SiteDetail() {
@@ -27,9 +29,29 @@ export default function SiteDetail() {
   // État pour stocker les alertes reçues de l'agent PHP
   const [alerts, setAlerts] = useState([]);
 
+  // --- ÉTATS DE PAGINATION ---
+  const [pluginPage, setPluginPage] = useState(1);
+  const [alertPage, setAlertPage] = useState(1);
+
+  // --- LOGIQUE DE DÉCOUPAGE (PLUGINS) ---
+  const plugins = site?.plugins_inventory || [];
+  const pluginsPerPage = 6;
+  const totalPluginPages = Math.ceil(plugins.length / pluginsPerPage);
+  const currentPlugins = plugins.slice(
+    (pluginPage - 1) * pluginsPerPage, 
+    pluginPage * pluginsPerPage
+  );
+
+  // --- LOGIQUE DE DÉCOUPAGE (ALERTES) ---
+  const alertsPerPage = 6;
+  const totalAlertPages = Math.ceil(alerts.length / alertsPerPage);
+  const currentAlerts = alerts.slice(
+    (alertPage - 1) * alertsPerPage, 
+    alertPage * alertsPerPage
+  );
+
   // 🧠 Logique de détection des versions obsolètes (Hardening)
   const isPhpObsolete = site?.php_version && (site.php_version.startsWith('7.') || site.php_version.startsWith('5.'));
-  const plugins = site?.plugins_inventory || [];
 
   // 1. Fonction pour charger les données de l'actif depuis FastAPI
   const fetchSiteDetails = async () => {
@@ -319,7 +341,7 @@ const getPlaybook = (eventType) => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {plugins.map((plugin, index) => (
+                    {currentPlugins.map((plugin, index) => (
                       <tr key={index} className="hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-3 font-medium text-slate-700">
                           {plugin.name}
@@ -343,6 +365,29 @@ const getPlaybook = (eventType) => {
                     ))}
                   </tbody>
                 </table>
+
+                {/* ✨ NOUVEAU : Contrôles de pagination pour les plugins */}
+                {totalPluginPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50">
+                    <button
+                      onClick={() => setPluginPage(prev => Math.max(prev - 1, 1))}
+                      disabled={pluginPage === 1}
+                      className="flex items-center gap-1 text-sm font-medium text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:text-blue-600 transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Précédent
+                    </button>
+                    <span className="text-sm text-slate-500 font-medium">
+                      Page {pluginPage} sur {totalPluginPages}
+                    </span>
+                    <button
+                      onClick={() => setPluginPage(prev => Math.min(prev + 1, totalPluginPages))}
+                      disabled={pluginPage === totalPluginPages}
+                      className="flex items-center gap-1 text-sm font-medium text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:text-blue-600 transition-colors"
+                    >
+                      Suivant <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -370,7 +415,7 @@ const getPlaybook = (eventType) => {
               <p className="text-sm mt-1">L'infrastructure de ce site semble saine.</p>
             </div>
           ) : (
-            alerts.map((alert) => {
+            currentAlerts.map((alert) => {
               const playbook = getPlaybook(alert.event_type);
               return (
                 <div key={alert.id} className="p-6 hover:bg-slate-50/50 transition-colors">
@@ -419,6 +464,28 @@ const getPlaybook = (eventType) => {
             })
           )}
         </div>
+        {/* ✨ NOUVEAU : Contrôles de pagination pour les alertes */}
+        {totalAlertPages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-slate-100 bg-slate-50/50">
+            <button
+              onClick={() => setAlertPage(prev => Math.max(prev - 1, 1))}
+              disabled={alertPage === 1}
+              className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-orange-600"
+            >
+              <ChevronLeft className="w-4 h-4" /> Précédent
+            </button>
+            <span className="text-sm text-slate-500 font-medium">
+              Page {alertPage} sur {totalAlertPages}
+            </span>
+            <button
+              onClick={() => setAlertPage(prev => Math.min(prev + 1, totalAlertPages))}
+              disabled={alertPage === totalAlertPages}
+              className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-orange-600"
+            >
+              Suivant <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
     </div>

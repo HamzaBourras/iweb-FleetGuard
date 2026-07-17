@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function SitesList() {
   const navigate = useNavigate();
@@ -16,6 +16,15 @@ export default function SitesList() {
   const [copied, setCopied] = useState(false);
 
   const [newGeneratedToken, setNewGeneratedToken] = useState(null);
+
+  // États pour la pagination
+  const [sitePage, setSitePage] = useState(1);
+  const sitesPerPage = 10;
+  const totalSitePages = Math.ceil(sites.length / sitesPerPage);
+  const currentSites = sites.slice(
+    (sitePage - 1) * sitesPerPage,
+    sitePage * sitesPerPage
+  );
 
   const fetchSites = async () => {
     const token = localStorage.getItem('fleetguard_token');
@@ -159,7 +168,7 @@ export default function SitesList() {
                   </td>
                 </tr>
               ) : (
-                sites.map((site) => {
+                currentSites.map((site) => {
                   const isDeleted = site.deleted_at !== null;
 
                   return (
@@ -238,6 +247,28 @@ export default function SitesList() {
               )}
             </tbody>
           </table>
+          {/* ✨ NOUVEAU : Contrôles de pagination pour les sites */}
+        {totalSitePages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-slate-100 bg-slate-50/50">
+            <button
+              onClick={() => setSitePage(prev => Math.max(prev - 1, 1))}
+              disabled={sitePage === 1}
+              className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-orange-600"
+            >
+              <ChevronLeft className="w-4 h-4" /> Précédent
+            </button>
+            <span className="text-sm text-slate-500 font-medium">
+              Page {sitePage} sur {totalSitePages}
+            </span>
+            <button
+              onClick={() => setSitePage(prev => Math.min(prev + 1, totalSitePages))}
+              disabled={sitePage === totalSitePages}
+              className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-orange-600"
+            >
+              Suivant <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         </div>
       </div>
 
