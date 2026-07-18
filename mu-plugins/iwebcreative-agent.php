@@ -48,41 +48,41 @@ function iweb_verify_bearer_token( WP_REST_Request $request ) {
  * 5. Collecte et formatage des données du site
  */
 function iweb_get_health_data() {
-    // Inclusion requise dans WordPress pour utiliser la fonction get_plugins()
     if ( ! function_exists( 'get_plugins' ) ) {
         require_once ABSPATH . 'wp-admin/includes/plugin.php';
     }
 
-    // Récupération de tous les plugins installés et de la liste de ceux qui sont actifs
     $all_plugins = get_plugins();
     $active_plugins_list = get_option( 'active_plugins', [] );
 
-    // Récupération des données du dernier login admin
     $last_admin_time = get_option( 'iweb_last_admin_login_time', null );
     $last_admin_ip = get_option( 'iweb_last_admin_login_ip', null );
     
+    // ✨ NOUVEAU : On interroge WordPress pour connaître les mises à jour en attente
+    wp_update_plugins(); // Force WP à vérifier (optionnel, mais garantit des données fraîches)
+    $update_plugins = get_site_transient( 'update_plugins' );
+    
     $formatted_plugins = [];
 
-    // Boucle pour déterminer le statut de chaque plugin
     foreach ( $all_plugins as $plugin_path => $plugin_data ) {
         $is_active = in_array( $plugin_path, $active_plugins_list, true );
         
+        // ✨ NOUVEAU : Vérification de la disponibilité d'une mise à jour
+        $has_update = isset( $update_plugins->response[ $plugin_path ] );
+        $new_version = $has_update ? $update_plugins->response[ $plugin_path ]->new_version : null;
+        
         $formatted_plugins[] = [
-            'name'    => $plugin_data['Name'],
-            'version' => $plugin_data['Version'],
-            'status'  => $is_active ? 'active' : 'inactive',
-            'path'    => $plugin_path
-
+            'name'        => $plugin_data['Name'],
+            'version'     => $plugin_data['Version'],
+            'status'      => $is_active ? 'active' : 'inactive',
+            'path'        => $plugin_path,
+            'has_update'  => $has_update,  // true ou false
+            'new_version' => $new_version  // ex: "2.4.1" ou null
         ];
     }
 
-    // NOUVEAU : Récupérer les alertes de sécurité stockées par le Logger
     $security_events = get_transient( 'iweb_security_logs' ) ?: [];
     
-    // (Optionnel) Effacer les logs après les avoir lus pour ne pas les renvoyer en double la prochaine fois
-    // delete_transient( 'iweb_security_logs' );
-
-    // Construction et renvoi de la réponse au format JSON
     return rest_ensure_response( [
         'timestamp'       => current_time( 'mysql' ),
         'site_url'        => get_site_url(),
@@ -91,13 +91,11 @@ function iweb_get_health_data() {
             'php_version' => phpversion(),
         ],
         'plugins'         => $formatted_plugins,
-        'security_events' => $security_events, // <-- Les événements sont maintenant envoyés au Dashboard !
-        // ✨ NOUVEAU : On ajoute les données d'audit
+        'security_events' => $security_events,
         'last_admin_login'=> $last_admin_time,
         'last_admin_ip'   => $last_admin_ip
     ] );
 }
-
 
 /**
  * 6. Moteur de journalisation centralisé & Transmission (Push Model)
