@@ -43,7 +43,7 @@ export default function SiteDetail() {
   );
 
   // --- LOGIQUE DE DÉCOUPAGE (ALERTES) ---
-  const alertsPerPage = 6;
+  const alertsPerPage = 4;
   const totalAlertPages = Math.ceil(alerts.length / alertsPerPage);
   const currentAlerts = alerts.slice(
     (alertPage - 1) * alertsPerPage, 
@@ -347,8 +347,20 @@ const getPlaybook = (eventType) => {
                           {plugin.name}
                           <div className="text-xs text-slate-400 font-mono mt-0.5">{plugin.path.split('/')[0]}</div>
                         </td>
-                        <td className="px-4 py-3 font-mono text-slate-500 text-xs">
-                          {plugin.version}
+                        {/* ✨ NOUVELLE VERSION avec alerte visuelle : */}
+                        <td className="px-4 py-3 font-mono text-xs">
+                          {plugin.has_update ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-red-500 font-bold line-through" title="Version obsolète">
+                                v{plugin.version}
+                              </span>
+                              <span className="text-emerald-500 font-black text-[10px]" title="Nouvelle version disponible">
+                                ➜ v{plugin.new_version}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-500">v{plugin.version}</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right">
                           {plugin.status === 'active' ? (
