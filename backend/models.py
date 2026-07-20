@@ -61,6 +61,8 @@ class ClientSite(Base):
     plugins_inventory = Column(JSON, nullable=True)
     last_admin_login = Column(DateTime, nullable=True)
     last_admin_ip = Column(String, nullable=True)
+    #colonne pour stocker le rapport du scan anti-malware :
+    malware_report = Column(JSON, nullable=True)
 
 
 class SecurityAlert(Base):

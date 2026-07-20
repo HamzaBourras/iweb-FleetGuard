@@ -16,9 +16,18 @@ define( 'IWEB_AGENT_SECRET_TOKEN', 'IWEB_SECURE_TOKEN_2026_XYZ' );
 
 // 3. Enregistrement de la route API REST personnalisée
 add_action( 'rest_api_init', function () {
+
+    // Route 1 : Inventaire rapide
     register_rest_route( 'iwebcreative/v1', '/health', [
         'methods'             => 'GET',
         'callback'            => 'iweb_get_health_data',
+        'permission_callback' => 'iweb_verify_bearer_token',
+    ] );
+
+    //ROUTE 2 : Scan profond anti-malware (indépendante)
+    register_rest_route( 'iwebcreative/v1', '/malware-scan', [
+        'methods'             => 'GET',
+        'callback'            => 'iweb_run_malware_scan',
         'permission_callback' => 'iweb_verify_bearer_token',
     ] );
 } );
@@ -273,3 +282,79 @@ add_action( 'wp_login', function( $user_login, $user ) {
         update_option( 'iweb_last_admin_login_ip', $ip );
     }
 }, 10, 2 );
+
+
+// ========================================================================
+// 9. Scanner Heuristique de Fichiers (Module EDR Indépendant)
+// ========================================================================
+
+/**
+ * Fonction récursive sécurisée pour explorer les dossiers sans faire crasher PHP
+ */
+function iweb_safe_scan_directory( $dir, &$results, $depth = 0 ) {
+    // Sécurité : on limite la profondeur à 5 sous-dossiers pour éviter les timeouts
+    if ( $depth > 5 || ! is_dir( $dir ) ) return;
+
+    // L'arobase (@) ignore silencieusement les dossiers protégés
+    $files = @scandir( $dir );
+    if ( ! $files ) return;
+
+    foreach ( $files as $file ) {
+        if ( $file === '.' || $file === '..' ) continue;
+        
+        $path = $dir . '/' . $file;
+
+        if ( is_dir( $path ) ) {
+            iweb_safe_scan_directory( $path, $results, $depth + 1 );
+        } else {
+            $ext = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+            // On traque les extensions exécutables dans un dossier de médias
+            if ( in_array( $ext, ['php', 'phtml', 'php5', 'sh', 'pl', 'py', 'cgi'] ) ) {
+                $results[] = [
+                    'file'     => str_replace( ABSPATH, '', $path ),
+                    'threat'   => 'Web Shell ou script executable potentiel',
+                    'severity' => 'critical'
+                ];
+            }
+        }
+    }
+}
+
+/**
+ * Callback de la nouvelle route /malware-scan
+ */
+function iweb_run_malware_scan() {
+    $malicious_files = [];
+
+    // --- Zone Rouge 1 : Le dossier wp-content/uploads ---
+    $upload_dir = wp_upload_dir();
+    $upload_path = $upload_dir['basedir'];
+
+    if ( is_dir( $upload_path ) ) {
+        iweb_safe_scan_directory( $upload_path, $malicious_files, 0 );
+    }
+
+    // --- Zone Rouge 2 : Vérification du wp-config.php ---
+    $wp_config_path = ABSPATH . 'wp-config.php';
+    if ( ! file_exists( $wp_config_path ) ) {
+        $wp_config_path = dirname( ABSPATH ) . '/wp-config.php';
+    }
+
+    if ( file_exists( $wp_config_path ) ) {
+        $content = @file_get_contents( $wp_config_path ); 
+        if ( $content && preg_match( '/(eval\s*\(|base64_decode\s*\(|str_rot13\s*\()/i', $content ) ) {
+            $malicious_files[] = [
+                'file'     => 'wp-config.php',
+                'threat'   => 'Code obfusqué détecté (Injection de Backdoor probable)',
+                'severity' => 'critical'
+            ];
+        }
+    }
+
+    // On renvoie un JSON propre, séparé du reste de l'infrastructure
+    return rest_ensure_response( [
+        'timestamp'    => current_time( 'mysql' ),
+        'status'       => 'scan_completed',
+        'malware_scan' => $malicious_files
+    ] );
+}

@@ -8,6 +8,7 @@ import secrets
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import httpx
+import time
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -366,7 +367,9 @@ def get_single_site(
         "alerts_count": alerts_count,
         # ✨ NOUVEAU : Envoi au Frontend
         "last_admin_login": getattr(site, 'last_admin_login', None),
-        "last_admin_ip": getattr(site, 'last_admin_ip', None)
+        "last_admin_ip": getattr(site, 'last_admin_ip', None),
+        # ✨ NOUVEAU : Envoi du rapport anti-malware au Frontend
+        "malware_report": getattr(site, 'malware_report', [])
     }
 
 
@@ -454,6 +457,69 @@ async def scan_site(
         "telemetry": scan_data
     }
 
+
+# --- ROUTE DE SCAN ANTI-MALWARE D'UN SITE ---
+@app.post("/api/sites/{site_id}/malware-scan")
+async def run_malware_scan(
+    site_id: int, 
+    db: Session = Depends(get_db)
+):
+    try:
+        # 1. Vérification de l'existence du site
+        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+        if not site:
+            raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
+
+        # 2. Construction de l'URL vers la NOUVELLE route PHP
+        base_url = site.url.rstrip('/')
+        # ✨ CORRECTION : On ajoute un "Cache-Buster" à l'URL
+        timestamp_actuel = int(time.time())
+        scan_endpoint = f"{base_url}/wp-json/iwebcreative/v1/malware-scan?nocache={timestamp_actuel}"
+
+        # 3. Déchiffrement du Token
+        try:
+            decrypted_token = security.decrypt_token(site.secret_token)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Impossible de déchiffrer le jeton de l'actif.")
+
+        # 4. Requête avec un TIMEOUT ÉTENDU (60 secondes) pour l'analyse des fichiers
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(
+                scan_endpoint,
+                headers={"Authorization": f"Bearer {decrypted_token}"} 
+            )
+            if response.status_code == 401:
+                raise HTTPException(status_code=401, detail="Jeton de sécurité invalide ou révoqué.")
+            
+            response.raise_for_status()
+            scan_data = response.json()
+
+        # 5. Mise à jour de la base de données avec les résultats du scan
+        malware_results = scan_data.get("malware_scan", [])
+        site.malware_report = malware_results
+
+        # Si des fichiers malveillants sont trouvés, on fait chuter le score de santé
+        if len(malware_results) > 0:
+            site.health_score = 0 
+        
+        db.commit()
+        db.refresh(site)
+        
+        return {
+            "message": "Analyse anti-malware terminée avec succès",
+            "malware_report": malware_results
+        }
+
+    # --- LE FILET DE SÉCURITÉ ---
+    except HTTPException:
+        raise 
+    except Exception as e:
+        db.rollback()
+        print("\n" + "="*50)
+        print("🚨 ERREUR FATALE LORS DU MALWARE SCAN 🚨")
+        print(traceback.format_exc())
+        print("="*50 + "\n")
+        raise HTTPException(status_code=500, detail=f"Erreur interne du serveur lors de l'analyse des fichiers. ({str(e)})")
 
 
 

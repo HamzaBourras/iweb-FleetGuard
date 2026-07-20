@@ -13,7 +13,9 @@ import {
   CheckCircle2,
   Layers, Terminal, Box, Play, Square,
   ChevronLeft, 
-  ChevronRight
+  ChevronRight,
+  Search,
+  FileWarning,
 } from 'lucide-react';
 
 export default function SiteDetail() {
@@ -32,6 +34,9 @@ export default function SiteDetail() {
   // --- ÉTATS DE PAGINATION ---
   const [pluginPage, setPluginPage] = useState(1);
   const [alertPage, setAlertPage] = useState(1);
+
+  // --- ÉTAT POUR LE SCAN ANTI-MALWARE ---
+  const [isScanningMalware, setIsScanningMalware] = useState(false);
 
   // --- LOGIQUE DE DÉCOUPAGE (PLUGINS) ---
   const plugins = site?.plugins_inventory || [];
@@ -101,6 +106,28 @@ export default function SiteDetail() {
       alert(err.message);
     } finally {
       setIsScanning(false);
+    }
+  };
+
+
+  // 3. Fonction pour déclencher un scan anti-malware (Malware Scanning)
+  const handleMalwareScan = async () => {
+    setIsScanningMalware(true);
+    try {
+      const response = await fetch(`http://localhost:8000/api/sites/${id}/malware-scan`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Échec de la communication lors de l\'analyse des fichiers.');
+      }
+
+      // On rafraîchit les données du site pour afficher le nouveau rapport
+      await fetchSiteDetails();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsScanningMalware(false);
     }
   };
 
@@ -214,6 +241,16 @@ const getPlaybook = (eventType) => {
             <><Activity className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" /> Scanner l'infrastructure</>
           )}
         </button>
+
+        {/* ✨ BOUTON : EDR / Anti-Malware */}
+            <button
+              onClick={handleMalwareScan}
+              disabled={isScanningMalware || isScanning}
+              className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
+            >
+              <Search className={`w-4 h-4 ${isScanningMalware ? 'animate-spin' : ''}`} />
+              {isScanningMalware ? 'Investigation en cours...' : 'Analyse Profonde (Fichiers)'}
+            </button>
       </div>
 
       {/* --- LES CARTES DE SCORE ET MÉTRIQUES --- */}
@@ -498,6 +535,47 @@ const getPlaybook = (eventType) => {
             </button>
           </div>
         )}
+      </div>
+
+      {/* --- ZONE : RAPPORT DE SCAN ANTI-MALWARE --- */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
+        <div className={`p-6 border-b flex items-center justify-between ${site?.malware_report?.length > 0 ? 'bg-red-50 border-red-100' : 'bg-slate-50/50 border-slate-100'}`}>
+          <div className="flex items-center gap-3">
+            <FileWarning className={`w-6 h-6 ${site?.malware_report?.length > 0 ? 'text-red-500' : 'text-slate-400'}`} />
+            <h3 className="text-lg font-bold text-slate-800">Scanner de Fichiers Heuristique</h3>
+          </div>
+          <span className={`text-sm font-medium px-3 py-1 rounded-full ${site?.malware_report?.length > 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+            {site?.malware_report?.length || 0} fichier(s) suspect(s)
+          </span>
+        </div>
+
+        <div className="p-6">
+          {!site?.malware_report || site.malware_report.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-6 text-emerald-600">
+              <CheckCircle2 className="w-10 h-10 mb-2 opacity-80" />
+              <p className="font-bold">Système de fichiers sain</p>
+              <p className="text-sm opacity-70">Aucun Web Shell ou code obfusqué n'a été détecté lors de la dernière analyse.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {site.malware_report.map((file, index) => (
+                <div key={index} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <div>
+                    <h4 className="font-bold text-red-800 flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4" /> {file.threat}
+                    </h4>
+                    <p className="font-mono text-sm text-red-600 mt-1 bg-white px-2 py-1 rounded border border-red-100 w-fit shadow-sm">
+                      {file.file}
+                    </p>
+                  </div>
+                  <button className="mt-4 md:mt-0 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors">
+                    Mettre en quarantaine
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
     </div>
