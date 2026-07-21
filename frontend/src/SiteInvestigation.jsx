@@ -16,7 +16,8 @@ import {
   ChevronRight,
   Search,
   FileWarning,
-  X
+  X,
+  Check
 } from 'lucide-react';
 
 export default function SiteInvestigation() {
@@ -58,10 +59,13 @@ export default function SiteInvestigation() {
     pluginPage * pluginsPerPage
   );
 
-  // --- LOGIQUE DE DÉCOUPAGE (ALERTES) ---
+  /// --- LOGIQUE DE DÉCOUPAGE (ALERTES ACTIVES UNIQUEMENT) ---
+  // On filtre d'abord pour ne garder que les alertes qui ne sont pas résolues
+  const activeAlerts = alerts.filter(alert => alert.status !== 'resolved');
+  
   const alertsPerPage = 4;
-  const totalAlertPages = Math.ceil(alerts.length / alertsPerPage);
-  const currentAlerts = alerts.slice(
+  const totalAlertPages = Math.ceil(activeAlerts.length / alertsPerPage);
+  const currentAlerts = activeAlerts.slice(
     (alertPage - 1) * alertsPerPage,
     alertPage * alertsPerPage
   );
@@ -120,6 +124,26 @@ export default function SiteInvestigation() {
       }
     };
   }, [site, setDynamicSiteName]);
+
+  // 🎯 Auto-correction de la pagination (Alertes)
+  // Si la page actuelle se vide et devient supérieure au total de pages restant, on recule d'une page
+  useEffect(() => {
+    if (totalAlertPages > 0 && alertPage > totalAlertPages) {
+      setAlertPage(totalAlertPages);
+    } else if (totalAlertPages === 0 && alertPage !== 1) {
+      setAlertPage(1);
+    }
+  }, [totalAlertPages, alertPage]);
+
+  // 🎯 Auto-correction de la pagination (Malwares)
+  // Même logique de sécurité pour les fichiers détruits
+  useEffect(() => {
+    if (totalMalwarePages > 0 && malwarePage > totalMalwarePages) {
+      setMalwarePage(totalMalwarePages);
+    } else if (totalMalwarePages === 0 && malwarePage !== 1) {
+      setMalwarePage(1);
+    }
+  }, [totalMalwarePages, malwarePage]);
 
   // 2. Fonction pour déclencher un scan actif (Active Scanning)
   const handleScan = async () => {
@@ -210,6 +234,30 @@ export default function SiteInvestigation() {
       showNotification('error', `Échec de l'intervention : ${err.message}`);
     } finally {
       setDeletingFile(null);
+    }
+  };
+
+
+  // 5. Fonction pour archiver (résoudre) une alerte
+  const handleResolveAlert = async (alertId) => {
+    const token = localStorage.getItem('fleetguard_token');
+    
+    try {
+      const response = await fetch(`http://localhost:8000/api/sites/${id}/alerts/${alertId}/resolve`, {
+        method: 'PATCH',
+        headers: { 
+          'Authorization': `Bearer ${token}` 
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la résolution de l\'alerte.');
+      }
+
+      await fetchSiteInvestigations(); // Rafraîchit les données
+      showNotification('success', 'L\'alerte a été marquée comme résolue et archivée.');
+    } catch (err) {
+      showNotification('error', err.message);
     }
   };
 
@@ -534,7 +582,7 @@ export default function SiteInvestigation() {
             <h3 className="text-lg font-bold text-slate-800">Dangers & Recommandations</h3>
           </div>
           <span className="text-sm font-medium text-slate-500 bg-slate-200/50 px-3 py-1 rounded-full">
-            {alerts.length} événements enregistrés
+            {activeAlerts.length} événement(s) nécessitant une action
           </span>
         </div>
 
@@ -564,6 +612,12 @@ export default function SiteInvestigation() {
                     <div className="text-sm font-medium text-slate-400 whitespace-nowrap">
                       {new Date(alert.timestamp).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}
                     </div>
+                    <button
+                        onClick={() => handleResolveAlert(alert.id)}
+                        className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition-colors"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Marquer comme résolu
+                      </button>
                   </div>
 
                   {/* Bloc Forensique & Remédiation */}
@@ -595,7 +649,7 @@ export default function SiteInvestigation() {
             })
           )}
         </div>
-        {/* ✨ NOUVEAU : Contrôles de pagination pour les alertes */}
+        {/* Contrôles de pagination pour les alertes */}
         {totalAlertPages > 1 && (
           <div className="flex items-center justify-between p-4 border-t border-slate-100 bg-slate-50/50">
             <button
@@ -665,7 +719,7 @@ export default function SiteInvestigation() {
                 </div>
               ))}
 
-              {/* ✨ NOUVEAU : Contrôles de pagination pour les malwares */}
+              {/*  Contrôles de pagination pour les malwares */}
               {totalMalwarePages > 1 && (
                 <div className="flex items-center justify-between pt-4 mt-4 border-t border-red-100">
                   <button

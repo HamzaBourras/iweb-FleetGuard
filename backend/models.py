@@ -79,6 +79,9 @@ class SecurityAlert(Base):
 
     site = relationship("ClientSite", back_populates="alerts")
 
+    # Nouvelle colonne pour indiquer si l'alerte est active ou résolue
+    status = Column(String, default="active")
+
 
 class DashboardAdmin(Base):
     """

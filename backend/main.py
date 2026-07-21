@@ -336,6 +336,35 @@ def get_all_alerts(
 
     return resultats
 
+# --- ROUTE DE RÉSOLUTION D'UNE ALERTE SPÉCIFIQUE ---
+@app.patch("/api/sites/{site_id}/alerts/{alert_id}/resolve")
+async def resolve_security_alert(
+    site_id: int, 
+    alert_id: int, 
+    db: Session = Depends(get_db)
+):
+    try:
+        # ⚠️ Remplace 'models.SecurityAlert' par le vrai nom de ta classe
+        alert = db.query(models.SecurityAlert).filter(
+            models.SecurityAlert.id == alert_id,
+            models.SecurityAlert.site_id == site_id
+        ).first()
+
+        if not alert:
+            raise HTTPException(status_code=404, detail="Alerte introuvable.")
+
+        # On archive l'alerte
+        alert.status = "resolved"
+        db.commit()
+
+        return {"message": "Alerte archivée avec succès."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- ROUTE DE RÉCUPÉRATION D'UN SEUL SITE (VUE DÉTAILLÉE) ---
 @app.get("/api/sites/{site_id}")
