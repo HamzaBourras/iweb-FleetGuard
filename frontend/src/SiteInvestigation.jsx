@@ -38,6 +38,7 @@ export default function SiteInvestigation() {
   // --- ÉTATS DE PAGINATION ---
   const [pluginPage, setPluginPage] = useState(1);
   const [alertPage, setAlertPage] = useState(1);
+  const [malwarePage, setMalwarePage] = useState(1);
 
   // --- ÉTAT POUR LE SCAN ANTI-MALWARE ---
   const [isScanningMalware, setIsScanningMalware] = useState(false);
@@ -63,6 +64,15 @@ export default function SiteInvestigation() {
   const currentAlerts = alerts.slice(
     (alertPage - 1) * alertsPerPage,
     alertPage * alertsPerPage
+  );
+
+  // --- LOGIQUE DE DÉCOUPAGE (MALWARES) ---
+  const malwares = site?.malware_report || [];
+  const malwaresPerPage = 4; // Tu peux ajuster ce nombre
+  const totalMalwarePages = Math.ceil(malwares.length / malwaresPerPage);
+  const currentMalwares = malwares.slice(
+    (malwarePage - 1) * malwaresPerPage,
+    malwarePage * malwaresPerPage
   );
 
   // 🧠 Logique de détection des versions obsolètes (Hardening)
@@ -630,20 +640,21 @@ export default function SiteInvestigation() {
             </div>
           ) : (
             <div className="space-y-4">
-              {site.malware_report.map((file, index) => (
+              {/* ✨ MODIFICATION ICI : On mappe sur currentMalwares au lieu de site.malware_report */}
+              {currentMalwares.map((file, index) => (
                 <div key={index} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl">
                   <div>
                     <h4 className="font-bold text-red-800 flex items-center gap-2">
                       <ShieldAlert className="w-4 h-4" /> {file.threat}
                     </h4>
-                    <p className="font-mono text-sm text-red-600 mt-1 bg-white px-2 py-1 rounded border border-red-100 w-fit shadow-sm">
+                    <p className="font-mono text-sm text-red-600 mt-1 bg-white px-2 py-1 rounded border border-red-100 w-fit shadow-sm break-all">
                       {file.file}
                     </p>
                   </div>
                   <button
                     onClick={() => initiateDelete(file.file)}
                     disabled={deletingFile === file.file}
-                    className="mt-4 md:mt-0 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    className="mt-4 md:mt-0 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
                   >
                     {deletingFile === file.file ? (
                       <><RefreshCw className="w-4 h-4 animate-spin" /> Destruction...</>
@@ -653,6 +664,29 @@ export default function SiteInvestigation() {
                   </button>
                 </div>
               ))}
+
+              {/* ✨ NOUVEAU : Contrôles de pagination pour les malwares */}
+              {totalMalwarePages > 1 && (
+                <div className="flex items-center justify-between pt-4 mt-4 border-t border-red-100">
+                  <button
+                    onClick={() => setMalwarePage(prev => Math.max(prev - 1, 1))}
+                    disabled={malwarePage === 1}
+                    className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-red-600 transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" /> Précédent
+                  </button>
+                  <span className="text-sm text-slate-500 font-medium">
+                    Page {malwarePage} sur {totalMalwarePages}
+                  </span>
+                  <button
+                    onClick={() => setMalwarePage(prev => Math.min(prev + 1, totalMalwarePages))}
+                    disabled={malwarePage === totalMalwarePages}
+                    className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-red-600 transition-colors"
+                  >
+                    Suivant <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
