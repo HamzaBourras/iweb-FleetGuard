@@ -65,6 +65,51 @@ def read_root():
 # On indique à FastAPI quelle route délivre les tokens
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
+# --- FONCTION DE RECALCUL DU SCORE DE SANTÉ du site ---
+def recalculate_health_score(site, db: Session):
+    """
+    Recalcule le score de santé du site basé sur les menaces actives.
+    - Présence de malware = 0/100 immédiat
+    - Par alerte active : critical (-15), high (-10), medium (-5), low/autres (-2)
+    - Plancher à 20/100 pour différencier d'une infection malware
+    - Zéro menace = 100/100
+    """
+    # 1. Vérification des malwares
+    has_malware = len(site.malware_report) > 0 if site.malware_report else False
+    
+    if has_malware:
+        site.health_score = 0
+    else:
+        # 2. Récupération des objets alertes non résolues (on utilise .all() au lieu de .count())
+        active_alerts = db.query(models.SecurityAlert).filter(
+            models.SecurityAlert.site_id == site.id,
+            models.SecurityAlert.status != "resolved"
+        ).all()
+        
+        if not active_alerts:
+            site.health_score = 100
+        else:
+            # 3. Calcul de la pénalité selon la gravité de l'alerte
+            penalite_score = 0
+            for event in active_alerts:
+                if event.severity == "critical":
+                    penalite_score += 15
+                elif event.severity == "high":
+                    penalite_score += 10
+                elif event.severity == "medium":
+                    penalite_score += 5
+                else:
+                    penalite_score += 2
+            
+            # On soustrait la pénalité totale de 100
+            new_score = 100 - penalite_score
+            
+            # On s'assure que le score ne tombe pas sous 20 (sauf en cas de malware)
+            site.health_score = max(20, new_score)
+
+    db.commit()
+    db.refresh(site)
+
 # 4. Route pour recevoir les alertes de l'agent PHP
 @app.post("/api/alerts")
 def receive_agent_alerts(
@@ -357,6 +402,11 @@ async def resolve_security_alert(
         alert.status = "resolved"
         db.commit()
 
+        # ✨ NOUVEAU : On récupère le site et on met à jour son score
+        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+        if site:
+            recalculate_health_score(site, db)
+
         return {"message": "Alerte archivée avec succès."}
 
     except HTTPException:
@@ -603,6 +653,9 @@ async def delete_malicious_file(
                 site.health_score = 100 
                 
             db.commit()
+
+            # ✨ NOUVEAU : On recalcule le score global
+            recalculate_health_score(site, db)
 
         return {"message": "Payload détruit avec succès."}
 

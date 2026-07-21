@@ -36,6 +36,9 @@ export default function SiteInvestigation() {
   // État pour stocker les alertes reçues de l'agent PHP
   const [alerts, setAlerts] = useState([]);
 
+  // --- ÉTAT POUR LA MODALE DE RÉSULTAT DE SCAN ---
+  const [scanResultModal, setScanResultModal] = useState(null); // { title: '...', type: 'audit' | 'malware', text: '...', targetSection: '...' }
+
   // --- ÉTATS DE PAGINATION ---
   const [pluginPage, setPluginPage] = useState(1);
   const [alertPage, setAlertPage] = useState(1);
@@ -50,6 +53,10 @@ export default function SiteInvestigation() {
   const [fileToDelete, setFileToDelete] = useState(null); // Contient le nom du fichier si la modale est ouverte
   const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: '...' }
 
+  // ÉTATS POUR LA RÉSOLUTION D'ALERTE
+  const [alertToResolve, setAlertToResolve] = useState(null); // Contient l'objet alerte si la modale est ouverte
+  const [resolvingAlert, setResolvingAlert] = useState(null); // ID de l'alerte en cours d'archivage
+
   // --- LOGIQUE DE DÉCOUPAGE (PLUGINS) ---
   const plugins = site?.plugins_inventory || [];
   const pluginsPerPage = 6;
@@ -62,7 +69,7 @@ export default function SiteInvestigation() {
   /// --- LOGIQUE DE DÉCOUPAGE (ALERTES ACTIVES UNIQUEMENT) ---
   // On filtre d'abord pour ne garder que les alertes qui ne sont pas résolues
   const activeAlerts = alerts.filter(alert => alert.status !== 'resolved');
-  
+
   const alertsPerPage = 4;
   const totalAlertPages = Math.ceil(activeAlerts.length / alertsPerPage);
   const currentAlerts = activeAlerts.slice(
@@ -145,12 +152,12 @@ export default function SiteInvestigation() {
     }
   }, [totalMalwarePages, malwarePage]);
 
+  
   // 2. Fonction pour déclencher un scan actif (Active Scanning)
   const handleScan = async () => {
     setIsScanning(true);
     const token = localStorage.getItem('fleetguard_token');
     try {
-      // Appel à une future route FastAPI qui va contacter l'agent PHP
       const response = await fetch(`http://localhost:8000/api/sites/${id}/scan`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
@@ -158,8 +165,16 @@ export default function SiteInvestigation() {
 
       if (!response.ok) throw new Error("Échec de la communication avec la sonde distante.");
 
-      // Si le scan réussit, on rafraîchit les données affichées
       await fetchSiteInvestigations();
+
+      // ✨ Déclenchement de la modale de résumé (Audit d'infrastructure)
+      setScanResultModal({
+        title: "Audit d'infrastructure terminé",
+        type: "audit",
+        text: "La cartographie des composants et de l'inventaire technologique (SBOM) a été mise à jour avec succès.",
+        targetSection: "section-plugins"
+      });
+
     } catch (err) {
       alert(err.message);
     } finally {
@@ -168,7 +183,7 @@ export default function SiteInvestigation() {
   };
 
 
-  // 3. Fonction pour déclencher un scan anti-malware (Malware Scanning)
+  // 3. Fonction pour déclencher le scanner anti-malware
   const handleMalwareScan = async () => {
     setIsScanningMalware(true);
     try {
@@ -180,13 +195,36 @@ export default function SiteInvestigation() {
         throw new Error('Échec de la communication lors de l\'analyse des fichiers.');
       }
 
-      // On rafraîchit les données du site pour afficher le nouveau rapport
-      await fetchSiteInvestigations();
+      // On récupère les données fraîches pour compter les menaces
+      const siteRes = await fetch(`http://localhost:8000/api/sites/${id}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('fleetguard_token')}` }
+      });
+      const siteData = await siteRes.json();
+      setSite(siteData);
+
+      const malwareCount = siteData.malware_report?.length || 0;
+
+      // ✨ Déclenchement de la modale de résumé (Scanner Anti-Malware)
+      setScanResultModal({
+        title: "Analyse anti-malware terminée",
+        type: "malware",
+        text: malwareCount > 0 
+          ? `Attention : ${malwareCount} fichier(s) suspect(s) ou Web Shell ont été interceptés dans le répertoire des uploads.`
+          : "Aucun code malveillant ou obfusqué n'a été détecté dans les zones cibles.",
+        targetSection: "section-malware"
+      });
+
     } catch (err) {
       setError(err.message);
     } finally {
       setIsScanningMalware(false);
     }
+  };
+
+  // Fonction pour défiler vers une section spécifique après la fermeture de la modale
+  const handleViewDetails = (sectionId) => {
+    setScanResultModal(null);
+    scrollToSection(sectionId);
   };
 
 
@@ -238,15 +276,21 @@ export default function SiteInvestigation() {
   };
 
 
-  // 5. Fonction pour archiver (résoudre) une alerte
-  const handleResolveAlert = async (alertId) => {
+  // 5. Fonction pour archiver (résoudre) une alerte après confirmation
+  const confirmResolveAlert = async () => {
+    if (!alertToResolve) return;
+
+    const currentAlertId = alertToResolve.id;
+    setResolvingAlert(currentAlertId); // Lance l'animation de chargement
+    setAlertToResolve(null); // Ferme la modale immédiatement
+
     const token = localStorage.getItem('fleetguard_token');
-    
+
     try {
-      const response = await fetch(`http://localhost:8000/api/sites/${id}/alerts/${alertId}/resolve`, {
+      const response = await fetch(`http://localhost:8000/api/sites/${id}/alerts/${currentAlertId}/resolve`, {
         method: 'PATCH',
-        headers: { 
-          'Authorization': `Bearer ${token}` 
+        headers: {
+          'Authorization': `Bearer ${token}`
         }
       });
 
@@ -254,10 +298,12 @@ export default function SiteInvestigation() {
         throw new Error('Erreur lors de la résolution de l\'alerte.');
       }
 
-      await fetchSiteInvestigations(); // Rafraîchit les données
+      await fetchSiteInvestigations(); // Rafraîchit les données et le score
       showNotification('success', 'L\'alerte a été marquée comme résolue et archivée.');
     } catch (err) {
       showNotification('error', err.message);
+    } finally {
+      setResolvingAlert(null); // Arrête l'animation
     }
   };
 
@@ -336,11 +382,20 @@ export default function SiteInvestigation() {
     };
   };
 
+  // 🎯 Fonction pour défiler doucement vers une section (Version Robuste)
+  const scrollToSection = (sectionId) => {
+    const element = document.getElementById(sectionId);
+    if (element) {
+      // scrollIntoView gère automatiquement les conteneurs React imbriqués
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in max-w-6xl mx-auto pb-12">
 
       {/* --- EN-TÊTE ET NAVIGATION --- */}
-      <div className="flex flex-col md:flex-row justify-between md:items-end gap-4 border-b border-slate-200 pb-6">
+      <div className="flex flex-col lg:flex-row justify-between lg:items-end gap-6 border-b border-slate-200 pb-6">
         <div>
           <button
             onClick={() => navigate(-1)}
@@ -359,28 +414,41 @@ export default function SiteInvestigation() {
           </a>
         </div>
 
-        {/* ✨ BOUTON DE SCAN ACTIF ✨ */}
-        <button
-          onClick={handleScan}
-          disabled={isScanning}
-          className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 md:w-auto w-full group disabled:bg-slate-600 disabled:cursor-not-allowed"
-        >
-          {isScanning ? (
-            <><RefreshCw className="w-5 h-5 animate-spin" /> Analyse en cours...</>
-          ) : (
-            <><Activity className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" /> Scanner l'infrastructure</>
-          )}
-        </button>
+        {/* ✨ PANNEAU DE CONTRÔLE (ACTIONS SEC OPS) ✨ */}
+        <div className="flex flex-col sm:flex-row items-stretch gap-2 p-1.5 bg-slate-100/80 backdrop-blur-sm rounded-2xl border border-slate-200/80 shadow-inner w-full lg:w-auto mt-4 lg:mt-0">
+          
+          {/* 1. Bouton Audit Infrastructure */}
+          <button
+            onClick={handleScan}
+            disabled={isScanning || isScanningMalware}
+            className="relative flex items-center justify-center gap-2.5 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group border border-slate-200 hover:border-blue-200"
+          >
+            {isScanning ? (
+              <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
+            ) : (
+              <Activity className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+            )}
+            {isScanning ? 'Audit en cours...' : 'Scanner d\'infrastructure'}
+          </button>
 
-        {/* ✨ BOUTON : EDR / Anti-Malware */}
-        <button
-          onClick={handleMalwareScan}
-          disabled={isScanningMalware || isScanning}
-          className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
-        >
-          <Search className={`w-4 h-4 ${isScanningMalware ? 'animate-spin' : ''}`} />
-          {isScanningMalware ? 'Investigation en cours...' : 'Analyse Profonde (Fichiers)'}
-        </button>
+          {/* 2. Bouton Analyse Fichiers (Anti-Malware) */}
+          <button
+            onClick={handleMalwareScan}
+            disabled={isScanningMalware || isScanning}
+            className="relative flex items-center justify-center gap-2.5 bg-slate-900 hover:bg-slate-800 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group border border-transparent"
+          >
+            {/* Petit indicateur visuel (pulse) pour inciter au clic */}
+            {!isScanningMalware && !isScanning && (
+              <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500 shadow"></span>
+              </span>
+            )}
+            
+            <Search className={`w-4 h-4 ${isScanningMalware ? 'animate-spin text-orange-400' : 'text-orange-500 group-hover:-rotate-12 transition-transform'}`} />
+            {isScanningMalware ? 'Investigation...' : 'Scanner Anti-Malware'}
+          </button>
+        </div>
       </div>
 
       {/* --- LES CARTES DE SCORE ET MÉTRIQUES --- */}
@@ -443,8 +511,32 @@ export default function SiteInvestigation() {
 
       </div>
 
+      {/* ========================================================= */}
+      {/* NAVBAR INTERNE (STICKY)                                   */}
+      {/* ========================================================= */}
+      <div className="sticky top-4 z-40 bg-white/80 backdrop-blur-md p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap justify-center gap-2 mx-auto w-fit transition-all">
+        <button
+          onClick={() => scrollToSection('section-plugins')}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+        >
+          <Layers className="w-4 h-4" /> Extensions (SBOM)
+        </button>
+        <button
+          onClick={() => scrollToSection('section-alerts')}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all"
+        >
+          <AlertTriangle className="w-4 h-4" /> Dangers & Alertes
+        </button>
+        <button
+          onClick={() => scrollToSection('section-malware')}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+        >
+          <FileWarning className="w-4 h-4" /> Scanner des fichiers
+        </button>
+      </div>
+
       {/* --- ZONE 3 : SBOM (Inventaire Technologique) --- */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
+      <div id="section-plugins" className="scroll-mt-24 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
         <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Layers className="w-6 h-6 text-blue-500" />
@@ -575,7 +667,7 @@ export default function SiteInvestigation() {
 
 
       {/* --- ZONE : DANGERS & RECOMMANDATIONS FORENSIQUES --- */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
+      <div id="section-alerts" className="scroll-mt-24 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
         <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <AlertTriangle className="w-6 h-6 text-orange-500" />
@@ -613,11 +705,16 @@ export default function SiteInvestigation() {
                       {new Date(alert.timestamp).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}
                     </div>
                     <button
-                        onClick={() => handleResolveAlert(alert.id)}
-                        className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition-colors"
-                      >
-                        <Check className="w-3.5 h-3.5" /> Marquer comme résolu
-                      </button>
+                      onClick={() => setAlertToResolve(alert)}
+                      disabled={resolvingAlert === alert.id}
+                      className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition-colors disabled:opacity-50"
+                    >
+                      {resolvingAlert === alert.id ? (
+                        <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Archivage...</>
+                      ) : (
+                        <><Check className="w-3.5 h-3.5" /> Marquer comme résolu</>
+                      )}
+                    </button>
                   </div>
 
                   {/* Bloc Forensique & Remédiation */}
@@ -674,7 +771,7 @@ export default function SiteInvestigation() {
       </div>
 
       {/* --- ZONE : RAPPORT DE SCAN ANTI-MALWARE --- */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
+      <div id="section-malware" className="scroll-mt-24 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
         <div className={`p-6 border-b flex items-center justify-between ${site?.malware_report?.length > 0 ? 'bg-red-50 border-red-100' : 'bg-slate-50/50 border-slate-100'}`}>
           <div className="flex items-center gap-3">
             <FileWarning className={`w-6 h-6 ${site?.malware_report?.length > 0 ? 'text-red-500' : 'text-slate-400'}`} />
@@ -795,8 +892,8 @@ export default function SiteInvestigation() {
       {notification && (
         <div className="fixed bottom-6 right-6 z-50 transition-all duration-300 transform translate-y-0 opacity-100">
           <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border-l-4 ${notification.type === 'success'
-              ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
-              : 'bg-red-50 border-red-500 text-red-800'
+            ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
+            : 'bg-red-50 border-red-500 text-red-800'
             }`}>
             {notification.type === 'success' ? (
               <CheckCircle2 className="w-5 h-5 text-emerald-600" />
@@ -810,6 +907,98 @@ export default function SiteInvestigation() {
             >
               <X className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODALE DE CONFIRMATION (RÉSOLUTION D'ALERTE)              */}
+      {/* ========================================================= */}
+      {alertToResolve && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden scale-100 transition-transform">
+            <div className="p-6 bg-emerald-50 border-b border-emerald-100 flex items-start gap-4">
+              <div className="p-3 bg-emerald-100 text-emerald-600 rounded-full shrink-0">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-emerald-800">Archiver l'alerte</h3>
+                <p className="text-emerald-600 text-sm mt-1">Vous êtes sur le point de marquer cet événement de sécurité comme résolu.</p>
+              </div>
+            </div>
+            <div className="p-6 bg-white">
+              <p className="text-sm font-bold text-slate-700 mb-2">Détails de l'alerte :</p>
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <p className="font-bold text-slate-800">{alertToResolve.message}</p>
+                <p className="text-xs text-slate-500 mt-1 font-mono">IP Cible: {alertToResolve.ip_address}</p>
+              </div>
+              <p className="text-slate-500 text-sm mt-4 font-medium flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-500" />
+                Elle sera retirée de la vue principale mais conservée dans votre historique.
+              </p>
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setAlertToResolve(null)}
+                className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmResolveAlert}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2"
+              >
+                <Check className="w-4 h-4" /> Confirmer la résolution
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* POP-UP DE SYNTHÈSE DES RÉSULTATS DE SCAN                  */}
+      {/* ========================================================= */}
+      {scanResultModal && (
+        <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md px-4 drop-shadow-2xl animate-popup-slide">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden ring-1 ring-black/5">
+            <div className={`p-5 border-b flex items-start gap-4 ${
+              scanResultModal.type === 'malware' && site?.malware_report?.length > 0 
+                ? 'bg-red-50 border-red-100 text-red-800' 
+                : 'bg-blue-50 border-blue-100 text-blue-800'
+            }`}>
+              <div className={`p-2.5 rounded-full shrink-0 ${
+                scanResultModal.type === 'malware' && site?.malware_report?.length > 0 
+                  ? 'bg-red-100 text-red-600' 
+                  : 'bg-blue-100 text-blue-600'
+              }`}>
+                {scanResultModal.type === 'malware' ? <FileWarning className="w-5 h-5" /> : <Activity className="w-5 h-5" />}
+              </div>
+              <div>
+                <h3 className="text-base font-black leading-tight">{scanResultModal.title}</h3>
+                <p className="text-xs opacity-80 mt-0.5">Rapport de télémétrie instantané</p>
+              </div>
+            </div>
+            
+            <div className="p-5 bg-white">
+              <p className="text-slate-700 text-sm leading-relaxed font-medium">
+                {scanResultModal.text}
+              </p>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setScanResultModal(null)}
+                className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg text-sm transition-colors"
+              >
+                Fermer
+              </button>
+              <button
+                onClick={() => handleViewDetails(scanResultModal.targetSection)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-sm shadow-sm transition-colors flex items-center gap-2"
+              >
+                Voir le résultat <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}
