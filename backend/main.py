@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 import httpx
 import time
+from pydantic import BaseModel
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -521,6 +522,66 @@ async def run_malware_scan(
         print("="*50 + "\n")
         raise HTTPException(status_code=500, detail=f"Erreur interne du serveur lors de l'analyse des fichiers. ({str(e)})")
 
+
+# --- ROUTE DE SUPPRESSION D'UN FICHIER MALVEILLANT SUR LE SITE ---
+# Modèle pour la requête de suppression
+class DeleteFileRequest(BaseModel):
+    file_path: str
+
+@app.post("/api/sites/{site_id}/delete-file")
+async def delete_malicious_file(
+    site_id: int, 
+    payload: DeleteFileRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+        if not site:
+            raise HTTPException(status_code=404, detail="Cible introuvable.")
+
+        base_url = site.url.rstrip('/')
+        delete_endpoint = f"{base_url}/wp-json/iwebcreative/v1/delete-file"
+        
+        try:
+            decrypted_token = security.decrypt_token(site.secret_token)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Erreur de déchiffrement du jeton.")
+
+        # Requête vers l'agent PHP
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                delete_endpoint,
+                headers={"Authorization": f"Bearer {decrypted_token}"},
+                json={"file_path": payload.file_path}
+            )
+            
+            if response.status_code == 401:
+                raise HTTPException(status_code=401, detail="Jeton de sécurité invalide.")
+            
+            # Si WordPress renvoie une erreur (ex: tentative de supprimer wp-config)
+            if response.status_code != 200:
+                err_data = response.json()
+                err_msg = err_data.get('message', 'Échec de la suppression sur le serveur distant.')
+                raise HTTPException(status_code=response.status_code, detail=err_msg)
+
+        # Si le fichier est bien supprimé, on le retire du JSON dans la base de données PostgreSQL
+        if site.malware_report:
+            updated_report = [f for f in site.malware_report if f.get('file') != payload.file_path]
+            site.malware_report = updated_report
+            
+            # Si c'était la dernière menace, on remonte le score de santé à 100
+            if len(updated_report) == 0:
+                site.health_score = 100 
+                
+            db.commit()
+
+        return {"message": "Payload détruit avec succès."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 

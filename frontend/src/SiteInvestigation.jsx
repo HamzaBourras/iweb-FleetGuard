@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import {
   ArrowLeft,
   Globe,
@@ -12,13 +12,17 @@ import {
   RefreshCw,
   CheckCircle2,
   Layers, Terminal, Box, Play, Square,
-  ChevronLeft, 
+  ChevronLeft,
   ChevronRight,
   Search,
   FileWarning,
+  X
 } from 'lucide-react';
 
-export default function SiteDetail() {
+export default function SiteInvestigation() {
+  // On récupère la fonction envoyée par le Dashboard
+  const { setDynamicSiteName } = useOutletContext() || {};
+
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -38,12 +42,18 @@ export default function SiteDetail() {
   // --- ÉTAT POUR LE SCAN ANTI-MALWARE ---
   const [isScanningMalware, setIsScanningMalware] = useState(false);
 
+  // --- ÉTAT POUR LA SUPPRESSION DE FICHIER ---
+  const [deletingFile, setDeletingFile] = useState(null);
+  // --- ÉTATS POUR L'UX DE SUPPRESSION ---
+  const [fileToDelete, setFileToDelete] = useState(null); // Contient le nom du fichier si la modale est ouverte
+  const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: '...' }
+
   // --- LOGIQUE DE DÉCOUPAGE (PLUGINS) ---
   const plugins = site?.plugins_inventory || [];
   const pluginsPerPage = 6;
   const totalPluginPages = Math.ceil(plugins.length / pluginsPerPage);
   const currentPlugins = plugins.slice(
-    (pluginPage - 1) * pluginsPerPage, 
+    (pluginPage - 1) * pluginsPerPage,
     pluginPage * pluginsPerPage
   );
 
@@ -51,7 +61,7 @@ export default function SiteDetail() {
   const alertsPerPage = 4;
   const totalAlertPages = Math.ceil(alerts.length / alertsPerPage);
   const currentAlerts = alerts.slice(
-    (alertPage - 1) * alertsPerPage, 
+    (alertPage - 1) * alertsPerPage,
     alertPage * alertsPerPage
   );
 
@@ -59,7 +69,7 @@ export default function SiteDetail() {
   const isPhpObsolete = site?.php_version && (site.php_version.startsWith('7.') || site.php_version.startsWith('5.'));
 
   // 1. Fonction pour charger les données de l'actif depuis FastAPI
-  const fetchSiteDetails = async () => {
+  const fetchSiteInvestigations = async () => {
     const token = localStorage.getItem('fleetguard_token');
     try {
       // On lance les deux requêtes en parallèle pour gagner du temps
@@ -84,8 +94,22 @@ export default function SiteDetail() {
 
   // Chargement initial
   useEffect(() => {
-    fetchSiteDetails();
+    fetchSiteInvestigations();
   }, [id]);
+
+  // 🎯 Remonte le nom du site vers la barre de navigation parente
+  useEffect(() => {
+    if (site && site.site_name && setDynamicSiteName) {
+      setDynamicSiteName(site.site_name);
+    }
+
+    // Fonction de nettoyage quand on quitte la page
+    return () => {
+      if (setDynamicSiteName) {
+        setDynamicSiteName("");
+      }
+    };
+  }, [site, setDynamicSiteName]);
 
   // 2. Fonction pour déclencher un scan actif (Active Scanning)
   const handleScan = async () => {
@@ -101,7 +125,7 @@ export default function SiteDetail() {
       if (!response.ok) throw new Error("Échec de la communication avec la sonde distante.");
 
       // Si le scan réussit, on rafraîchit les données affichées
-      await fetchSiteDetails();
+      await fetchSiteInvestigations();
     } catch (err) {
       alert(err.message);
     } finally {
@@ -123,11 +147,59 @@ export default function SiteDetail() {
       }
 
       // On rafraîchit les données du site pour afficher le nouveau rapport
-      await fetchSiteDetails();
+      await fetchSiteInvestigations();
     } catch (err) {
       setError(err.message);
     } finally {
       setIsScanningMalware(false);
+    }
+  };
+
+
+  // 4. Fonctions pour détruire un fichier (Incident Response)
+  // A. Affiche une belle notification temporaire (Toast)
+  const showNotification = (type, message) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 5000); // Disparaît après 5 secondes
+  };
+
+  // B. Ouvre la modale au lieu de faire un window.confirm
+  const initiateDelete = (filePath) => {
+    setFileToDelete(filePath);
+  };
+
+  // C. Exécute réellement la suppression (Appelée par le bouton de la modale)
+  const confirmDeleteMalware = async () => {
+    if (!fileToDelete) return;
+
+    const currentFile = fileToDelete;
+    setDeletingFile(currentFile);
+    setFileToDelete(null); // On ferme la modale immédiatement
+
+    const token = localStorage.getItem('fleetguard_token');
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/sites/${id}/delete-file`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ file_path: currentFile })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Erreur inconnue lors de la suppression.');
+      }
+
+      await fetchSiteInvestigations(); // On met à jour l'interface
+      showNotification('success', 'Le payload a été détruit avec succès du serveur distant.');
+
+    } catch (err) {
+      showNotification('error', `Échec de l'intervention : ${err.message}`);
+    } finally {
+      setDeletingFile(null);
     }
   };
 
@@ -156,55 +228,55 @@ export default function SiteDetail() {
   const healthStyle = getHealthColor(site.health_score || 0);
 
   // 🧠 Moteur d'Intelligence Artificielle / Playbook SOC (Incident Response)
-const getPlaybook = (eventType) => {
-  const playbooks = {
-    'failed_login': {
-      danger: "Tentative de compromission d'identifiants (Brute-Force ou Credential Stuffing) ciblant le panneau d'administration wp-admin.",
-      action: "1. Implémentez une politique de verrouillage (Rate Limiting) via Fail2Ban ou un plugin. 2. Imposez l'authentification multifacteur (MFA) pour les rôles à privilèges."
-    },
-    'admin_privilege_granted': {
-      danger: "Élévation de privilèges (Privilege Escalation). Un attaquant ou une Backdoor a potentiellement créé/modifié un compte pour obtenir le contrôle total (Admin).",
-      action: "1. Auditez immédiatement la table 'wp_users'. 2. Révoquez l'accès du compte suspect. 3. Cherchez le vecteur d'infection initial (plugin vulnérable) dans les logs serveurs."
-    },
-    'plugin_deactivated': {
-      danger: "Technique d'évasion (Defense Evasion). Un attaquant tente de désactiver les mécanismes de défense (WAF, journalisation) pour opérer furtivement.",
-      action: "1. Réactivez l'extension critique. 2. Identifiez quelle session administrateur a exécuté cette action. 3. En cas de vol de session, forcez la déconnexion de tous les utilisateurs."
-    },
-    'admin_email_changed': {
-      danger: "Détournement de compte (Account Takeover). L'attaquant redirige les notifications système et les liens de réinitialisation vers sa propre adresse.",
-      action: "1. Restaurez l'email légitime dans la base de données (table wp_options). 2. Forcez la rotation des mots de passe pour tous les administrateurs."
-    },
-    'theme_switched': {
-      danger: "Altération de l'interface (Defacement) ou activation d'un thème contenant du code malveillant (Backdoor PHP/JavaScript).",
-      action: "1. Rétablissez le thème approuvé. 2. Scannez le dossier 'wp-content/themes' pour détecter des modifications de fichiers (ex: functions.php)."
-    },
-    'password_reset': {
-      danger: "Prise de contrôle ciblée. Si cette action n'a pas été initiée par l'utilisateur légitime, sa boîte mail est potentiellement compromise.",
-      action: "1. Contactez l'utilisateur concerné pour confirmation. 2. S'il s'agit d'une attaque, bloquez le compte temporairement et auditez la sécurité de la messagerie."
-    },
-    'waf_alert_sqli_xss': {
-      danger: "Tentative d'exploitation active (SQLi, XSS, LFI) interceptée. L'attaquant cherche à exfiltrer des données ou à exécuter des scripts côté client.",
-      action: "1. Identifiez l'URI ciblée dans les logs. 2. Mettez à jour le plugin ou le thème visé. 3. Envisagez de blacklister l'IP source au niveau du pare-feu périmétrique (ex: Cloudflare)."
-    },
-    'malicious_upload_attempt': {
-      danger: "Tentative d'exécution de code à distance (RCE). L'attaquant a essayé de téléverser un Web Shell (Cheval de Troie) sur le serveur.",
-      action: "1. Vérifiez les permissions (CHMOD) du dossier 'wp-content/uploads' (doit être 755). 2. Ajoutez un fichier .htaccess pour interdire l'exécution de PHP dans ce répertoire."
-    },
-    'file_editor_accessed': {
-      danger: "Activité de post-exploitation. L'attaquant utilise l'éditeur interne de WordPress pour injecter du code persistant dans le cœur du site sans passer par le FTP.",
-      action: "1. Désactivez l'éditeur de fichiers en ajoutant \"define('DISALLOW_FILE_EDIT', true);\" dans le wp-config.php. 2. Inspectez les dernières modifications de code."
-    },
-    'scanner_detected': {
-      danger: "Phase de reconnaissance. Un robot automatisé (Nmap, WPScan, SQLMap) cartographie la surface d'attaque et cherche des CVE connues.",
-      action: "1. Assurez-vous que la version de WordPress, de PHP et l'énumération des utilisateurs sont masquées. 2. Configurez le WAF pour bannir automatiquement les User-Agents agressifs."
-    }
-  };
+  const getPlaybook = (eventType) => {
+    const playbooks = {
+      'failed_login': {
+        danger: "Tentative de compromission d'identifiants (Brute-Force ou Credential Stuffing) ciblant le panneau d'administration wp-admin.",
+        action: "1. Implémentez une politique de verrouillage (Rate Limiting) via Fail2Ban ou un plugin. 2. Imposez l'authentification multifacteur (MFA) pour les rôles à privilèges."
+      },
+      'admin_privilege_granted': {
+        danger: "Élévation de privilèges (Privilege Escalation). Un attaquant ou une Backdoor a potentiellement créé/modifié un compte pour obtenir le contrôle total (Admin).",
+        action: "1. Auditez immédiatement la table 'wp_users'. 2. Révoquez l'accès du compte suspect. 3. Cherchez le vecteur d'infection initial (plugin vulnérable) dans les logs serveurs."
+      },
+      'plugin_deactivated': {
+        danger: "Technique d'évasion (Defense Evasion). Un attaquant tente de désactiver les mécanismes de défense (WAF, journalisation) pour opérer furtivement.",
+        action: "1. Réactivez l'extension critique. 2. Identifiez quelle session administrateur a exécuté cette action. 3. En cas de vol de session, forcez la déconnexion de tous les utilisateurs."
+      },
+      'admin_email_changed': {
+        danger: "Détournement de compte (Account Takeover). L'attaquant redirige les notifications système et les liens de réinitialisation vers sa propre adresse.",
+        action: "1. Restaurez l'email légitime dans la base de données (table wp_options). 2. Forcez la rotation des mots de passe pour tous les administrateurs."
+      },
+      'theme_switched': {
+        danger: "Altération de l'interface (Defacement) ou activation d'un thème contenant du code malveillant (Backdoor PHP/JavaScript).",
+        action: "1. Rétablissez le thème approuvé. 2. Scannez le dossier 'wp-content/themes' pour détecter des modifications de fichiers (ex: functions.php)."
+      },
+      'password_reset': {
+        danger: "Prise de contrôle ciblée. Si cette action n'a pas été initiée par l'utilisateur légitime, sa boîte mail est potentiellement compromise.",
+        action: "1. Contactez l'utilisateur concerné pour confirmation. 2. S'il s'agit d'une attaque, bloquez le compte temporairement et auditez la sécurité de la messagerie."
+      },
+      'waf_alert_sqli_xss': {
+        danger: "Tentative d'exploitation active (SQLi, XSS, LFI) interceptée. L'attaquant cherche à exfiltrer des données ou à exécuter des scripts côté client.",
+        action: "1. Identifiez l'URI ciblée dans les logs. 2. Mettez à jour le plugin ou le thème visé. 3. Envisagez de blacklister l'IP source au niveau du pare-feu périmétrique (ex: Cloudflare)."
+      },
+      'malicious_upload_attempt': {
+        danger: "Tentative d'exécution de code à distance (RCE). L'attaquant a essayé de téléverser un Web Shell (Cheval de Troie) sur le serveur.",
+        action: "1. Vérifiez les permissions (CHMOD) du dossier 'wp-content/uploads' (doit être 755). 2. Ajoutez un fichier .htaccess pour interdire l'exécution de PHP dans ce répertoire."
+      },
+      'file_editor_accessed': {
+        danger: "Activité de post-exploitation. L'attaquant utilise l'éditeur interne de WordPress pour injecter du code persistant dans le cœur du site sans passer par le FTP.",
+        action: "1. Désactivez l'éditeur de fichiers en ajoutant \"define('DISALLOW_FILE_EDIT', true);\" dans le wp-config.php. 2. Inspectez les dernières modifications de code."
+      },
+      'scanner_detected': {
+        danger: "Phase de reconnaissance. Un robot automatisé (Nmap, WPScan, SQLMap) cartographie la surface d'attaque et cherche des CVE connues.",
+        action: "1. Assurez-vous que la version de WordPress, de PHP et l'énumération des utilisateurs sont masquées. 2. Configurez le WAF pour bannir automatiquement les User-Agents agressifs."
+      }
+    };
 
-  return playbooks[eventType] || {
-    danger: "Comportement anormal détecté par la sonde télémétrique.",
-    action: "Effectuez une analyse forensique des journaux d'accès (access.log) et d'erreurs (error.log) du serveur web autour de cet horodatage."
+    return playbooks[eventType] || {
+      danger: "Comportement anormal détecté par la sonde télémétrique.",
+      action: "Effectuez une analyse forensique des journaux d'accès (access.log) et d'erreurs (error.log) du serveur web autour de cet horodatage."
+    };
   };
-};
 
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in max-w-6xl mx-auto pb-12">
@@ -243,14 +315,14 @@ const getPlaybook = (eventType) => {
         </button>
 
         {/* ✨ BOUTON : EDR / Anti-Malware */}
-            <button
-              onClick={handleMalwareScan}
-              disabled={isScanningMalware || isScanning}
-              className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
-            >
-              <Search className={`w-4 h-4 ${isScanningMalware ? 'animate-spin' : ''}`} />
-              {isScanningMalware ? 'Investigation en cours...' : 'Analyse Profonde (Fichiers)'}
-            </button>
+        <button
+          onClick={handleMalwareScan}
+          disabled={isScanningMalware || isScanning}
+          className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
+        >
+          <Search className={`w-4 h-4 ${isScanningMalware ? 'animate-spin' : ''}`} />
+          {isScanningMalware ? 'Investigation en cours...' : 'Analyse Profonde (Fichiers)'}
+        </button>
       </div>
 
       {/* --- LES CARTES DE SCORE ET MÉTRIQUES --- */}
@@ -313,7 +385,7 @@ const getPlaybook = (eventType) => {
 
       </div>
 
-{/* --- ZONE 3 : SBOM (Inventaire Technologique) --- */}
+      {/* --- ZONE 3 : SBOM (Inventaire Technologique) --- */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
         <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -360,9 +432,9 @@ const getPlaybook = (eventType) => {
           {/* Liste des Plugins */}
           <div>
             <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
-              <Box className="w-4 h-4 text-slate-400"/> Cartographie des Extensions
+              <Box className="w-4 h-4 text-slate-400" /> Cartographie des Extensions
             </h4>
-            
+
             {plugins.length === 0 ? (
               <div className="text-center p-8 border border-dashed border-slate-200 rounded-xl text-slate-500 text-sm">
                 Aucune extension détectée ou le scan n'a pas encore été lancé.
@@ -496,7 +568,7 @@ const getPlaybook = (eventType) => {
                           {playbook.danger}
                         </p>
                       </div>
-                      
+
                       {/* Action requise */}
                       <div className="border-t md:border-t-0 md:border-l border-slate-700 pt-4 md:pt-0 md:pl-6">
                         <h5 className="text-emerald-400 text-xs font-black uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -568,8 +640,16 @@ const getPlaybook = (eventType) => {
                       {file.file}
                     </p>
                   </div>
-                  <button className="mt-4 md:mt-0 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors">
-                    Mettre en quarantaine
+                  <button
+                    onClick={() => initiateDelete(file.file)}
+                    disabled={deletingFile === file.file}
+                    className="mt-4 md:mt-0 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {deletingFile === file.file ? (
+                      <><RefreshCw className="w-4 h-4 animate-spin" /> Destruction...</>
+                    ) : (
+                      'Détruire le fichier'
+                    )}
                   </button>
                 </div>
               ))}
@@ -578,6 +658,73 @@ const getPlaybook = (eventType) => {
         </div>
       </div>
 
+
+      {/* ========================================================= */}
+      {/* MODALE DE CONFIRMATION (UX)                               */}
+      {/* ========================================================= */}
+      {fileToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden scale-100 transition-transform">
+            <div className="p-6 bg-red-50 border-b border-red-100 flex items-start gap-4">
+              <div className="p-3 bg-red-100 text-red-600 rounded-full shrink-0">
+                <ShieldAlert className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-red-800">Intervention Critique</h3>
+                <p className="text-red-600 text-sm mt-1">Vous êtes sur le point de détruire définitivement ce fichier sur le serveur distant.</p>
+              </div>
+            </div>
+            <div className="p-6 bg-white">
+              <p className="text-sm font-bold text-slate-700 mb-2">Fichier ciblé :</p>
+              <p className="font-mono text-sm text-red-600 bg-red-50 px-3 py-2 rounded border border-red-100 break-all shadow-inner">
+                {fileToDelete}
+              </p>
+              <p className="text-slate-500 text-sm mt-4 font-medium flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" /> Cette action est irréversible.
+              </p>
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setFileToDelete(null)}
+                className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmDeleteMalware}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2"
+              >
+                <FileWarning className="w-4 h-4" /> Confirmer la destruction
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* TOAST NOTIFICATION (Succès / Erreur)                      */}
+      {/* ========================================================= */}
+      {notification && (
+        <div className="fixed bottom-6 right-6 z-50 transition-all duration-300 transform translate-y-0 opacity-100">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border-l-4 ${notification.type === 'success'
+              ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
+              : 'bg-red-50 border-red-500 text-red-800'
+            }`}>
+            {notification.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            )}
+            <p className="text-sm font-bold pr-4">{notification.message}</p>
+            <button
+              onClick={() => setNotification(null)}
+              className="text-current opacity-50 hover:opacity-100 transition-opacity ml-auto"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

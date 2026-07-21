@@ -24,10 +24,17 @@ add_action( 'rest_api_init', function () {
         'permission_callback' => 'iweb_verify_bearer_token',
     ] );
 
-    //ROUTE 2 : Scan profond anti-malware (indépendante)
+    // ROUTE 2 : Scan profond anti-malware (indépendante)
     register_rest_route( 'iwebcreative/v1', '/malware-scan', [
         'methods'             => 'GET',
         'callback'            => 'iweb_run_malware_scan',
+        'permission_callback' => 'iweb_verify_bearer_token',
+    ] );
+
+    // ROUTE 3 : Suppression de fichier malveillant
+    register_rest_route( 'iwebcreative/v1', '/delete-file', [
+        'methods'             => 'POST',
+        'callback'            => 'iweb_delete_malicious_file',
         'permission_callback' => 'iweb_verify_bearer_token',
     ] );
 } );
@@ -357,4 +364,43 @@ function iweb_run_malware_scan() {
         'status'       => 'scan_completed',
         'malware_scan' => $malicious_files
     ] );
+}
+
+
+/**
+ * 10. Module d'Intervention : Suppression de fichier malveillant
+ */
+function iweb_delete_malicious_file( WP_REST_Request $request ) {
+    $params = $request->get_json_params();
+    $file_path = isset( $params['file_path'] ) ? sanitize_text_field( $params['file_path'] ) : '';
+
+    if ( empty( $file_path ) ) {
+        return new WP_Error( 'missing_param', 'Chemin du fichier manquant.', [ 'status' => 400 ] );
+    }
+
+    // 🚨 SÉCURITÉ ABSOLUE : On interdit la suppression hors du dossier uploads
+    if ( strpos( $file_path, 'wp-content/uploads' ) === false ) {
+        return new WP_Error( 
+            'forbidden_path', 
+            'Intervention refusée : Ce fichier est un fichier systeme. Nettoyage manuel requis via FTP.', 
+            [ 'status' => 403 ] 
+        );
+    }
+
+    // Construction du chemin absolu
+    $absolute_path = ABSPATH . ltrim( $file_path, '/' );
+
+    if ( ! file_exists( $absolute_path ) ) {
+        return new WP_Error( 'not_found', 'Fichier introuvable. Il a peut-etre deja ete supprime.', [ 'status' => 404 ] );
+    }
+
+    // Tentative de suppression (unlink)
+    if ( unlink( $absolute_path ) ) {
+        return rest_ensure_response( [ 
+            'success' => true, 
+            'message' => "Le payload malveillant a ete detruit avec succes." 
+        ] );
+    } else {
+        return new WP_Error( 'delete_failed', 'Impossible de supprimer le fichier. Verifiez les permissions (CHMOD) du serveur.', [ 'status' => 500 ] );
+    }
 }
