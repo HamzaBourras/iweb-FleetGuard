@@ -44,17 +44,37 @@ add_action( 'rest_api_init', function () {
  */
 function iweb_verify_bearer_token( WP_REST_Request $request ) {
     $auth_header = $request->get_header( 'authorization' );
-    $expected_header = 'Bearer ' . IWEB_AGENT_SECRET_TOKEN;
+    
+    // Vérification de la présence du format "Bearer "
+    if ( ! $auth_header || ! preg_match( '/Bearer\s(\S+)/', $auth_header, $matches ) ) {
+        return new WP_Error(
+            'rest_forbidden',
+            'Accès refusé : Jeton manquant ou mal formaté.',
+            [ 'status' => 401 ]
+        );
+    }
+    
+    $token_recu = $matches[1];
 
-    // Si le token correspond, on autorise l'accès
-    if ( $auth_header === $expected_header ) {
+    // On récupère le jeton stocké dynamiquement dans le code source
+    $token_local = IWEB_AGENT_SECRET_TOKEN; 
+
+    if ( ! $token_local ) {
+        return new WP_Error(
+            'rest_forbidden',
+            'Agent non configuré : Aucun jeton de sécurité enregistré sur ce site.',
+            [ 'status' => 401 ]
+        );
+    }
+
+    // Comparaison cryptographique sécurisée contre les attaques temporelles
+    if ( hash_equals( $token_local, $token_recu ) ) {
         return true;
     }
 
-    // Sinon, on renvoie une erreur 401 Non Autorisé
     return new WP_Error(
         'rest_forbidden',
-        'Accès refusé : Jeton de sécurité invalide ou manquant.',
+        'Accès refusé : Accès refusé par la cible : Jeton de sécurité invalide ou révoqué.',
         [ 'status' => 401 ]
     );
 }

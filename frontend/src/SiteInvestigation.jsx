@@ -17,7 +17,9 @@ import {
   Search,
   FileWarning,
   X,
-  Check
+  Check,
+  Key,
+  Copy
 } from 'lucide-react';
 
 export default function SiteInvestigation() {
@@ -43,6 +45,12 @@ export default function SiteInvestigation() {
   const [pluginPage, setPluginPage] = useState(1);
   const [alertPage, setAlertPage] = useState(1);
   const [malwarePage, setMalwarePage] = useState(1);
+
+  // --- ÉTATS POUR LA ROTATION DU TOKEN ---
+  const [showTokenModal, setShowTokenModal] = useState(false);
+  const [isResettingToken, setIsResettingToken] = useState(false);
+  const [newGeneratedToken, setNewGeneratedToken] = useState(null); // Stocke le token en clair
+  const [copied, setCopied] = useState(false); // Gère l'animation du bouton copier
 
   // --- ÉTAT POUR LE SCAN ANTI-MALWARE ---
   const [isScanningMalware, setIsScanningMalware] = useState(false);
@@ -152,7 +160,7 @@ export default function SiteInvestigation() {
     }
   }, [totalMalwarePages, malwarePage]);
 
-  
+
   // 2. Fonction pour déclencher un scan actif (Active Scanning)
   const handleScan = async () => {
     setIsScanning(true);
@@ -163,11 +171,15 @@ export default function SiteInvestigation() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      if (!response.ok) throw new Error("Échec de la communication avec la sonde distante.");
+      // Si le code HTTP n'est pas 200 OK, on intercepte l'erreur
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || "Échec de l'audit : Impossible de communiquer avec la sonde distante.");
+      }
 
       await fetchSiteInvestigations();
 
-      // ✨ Déclenchement de la modale de résumé (Audit d'infrastructure)
+      // Ne s'exécute QUE si aucune erreur n'a été levée précédemment
       setScanResultModal({
         title: "Audit d'infrastructure terminé",
         type: "audit",
@@ -176,7 +188,8 @@ export default function SiteInvestigation() {
       });
 
     } catch (err) {
-      alert(err.message);
+      // Affichage propre de l'erreur via le composant Toast
+      showNotification('error', err.message);
     } finally {
       setIsScanning(false);
     }
@@ -186,36 +199,42 @@ export default function SiteInvestigation() {
   // 3. Fonction pour déclencher le scanner anti-malware
   const handleMalwareScan = async () => {
     setIsScanningMalware(true);
+    const token = localStorage.getItem('fleetguard_token');
+
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/malware-scan`, {
         method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` } // Correction: Ajout du token manquant
       });
 
+      // Interception stricte des erreurs
       if (!response.ok) {
-        throw new Error('Échec de la communication lors de l\'analyse des fichiers.');
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || "Échec de l'analyse heuristique des fichiers.");
       }
 
       // On récupère les données fraîches pour compter les menaces
       const siteRes = await fetch(`http://localhost:8000/api/sites/${id}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('fleetguard_token')}` }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const siteData = await siteRes.json();
       setSite(siteData);
 
       const malwareCount = siteData.malware_report?.length || 0;
 
-      // ✨ Déclenchement de la modale de résumé (Scanner Anti-Malware)
+      // Déclenchement de la modale de résumé (Scanner Anti-Malware)
       setScanResultModal({
         title: "Analyse anti-malware terminée",
         type: "malware",
-        text: malwareCount > 0 
+        text: malwareCount > 0
           ? `Attention : ${malwareCount} fichier(s) suspect(s) ou Web Shell ont été interceptés dans le répertoire des uploads.`
           : "Aucun code malveillant ou obfusqué n'a été détecté dans les zones cibles.",
         targetSection: "section-malware"
       });
 
     } catch (err) {
-      setError(err.message);
+      // Remplacement de setError() par une notification flottante
+      showNotification('error', err.message);
     } finally {
       setIsScanningMalware(false);
     }
@@ -307,6 +326,45 @@ export default function SiteInvestigation() {
     }
   };
 
+  // Fonction pour copier le jeton dans le presse-papier
+  const handleCopyToken = () => {
+    if (newGeneratedToken) {
+      navigator.clipboard.writeText(newGeneratedToken);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000); // Remet le bouton à "Copier" après 2s
+    }
+  };
+
+  // 6. Fonction pour la rotation du token (Key Rotation)
+  const handleRegenerateToken = async () => {
+    setIsResettingToken(true);
+    const token = localStorage.getItem('fleetguard_token');
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/sites/${id}/regenerate-token`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        throw new Error('Échec de la rotation de la clé cryptographique.');
+      }
+
+      const data = await response.json();
+      await fetchSiteInvestigations(); // Rafraîchit les données du site en arrière-plan
+
+      // ✨ Au lieu de fermer la modale, on affiche le composant de succès
+      setNewGeneratedToken(data.new_token);
+
+    } catch (err) {
+      showNotification('error', err.message);
+      setShowTokenModal(false);
+    } finally {
+      setIsResettingToken(false);
+    }
+  };
+
+  // Fonction pour déterminer la couleur du score de santé
   const getHealthColor = (score) => {
     if (score >= 90) return 'text-emerald-500 bg-emerald-50 border-emerald-200';
     if (score >= 70) return 'text-amber-500 bg-amber-50 border-amber-200';
@@ -416,12 +474,23 @@ export default function SiteInvestigation() {
 
         {/* ✨ PANNEAU DE CONTRÔLE (ACTIONS SEC OPS) ✨ */}
         <div className="flex flex-col sm:flex-row items-stretch gap-2 p-1.5 bg-slate-100/80 backdrop-blur-sm rounded-2xl border border-slate-200/80 shadow-inner w-full lg:w-auto mt-4 lg:mt-0">
-          
+
+          {/* 3. Bouton Régénérer Token (Key Rotation) */}
+          <button
+            onClick={() => setShowTokenModal(true)}
+            className="relative mg-10 flex items-center justify-center gap-2.5 bg-white hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all duration-300 group border border-slate-200 hover:border-indigo-200"
+            title="Révocation et génération d'une nouvelle clé d'API"
+          >
+            <Key className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
+            <span className="lg:inline">Rotation Token</span>
+          </button>
+
           {/* 1. Bouton Audit Infrastructure */}
           <button
             onClick={handleScan}
             disabled={isScanning || isScanningMalware}
             className="relative flex items-center justify-center gap-2.5 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group border border-slate-200 hover:border-blue-200"
+            title="Cartographier les composants (SBOM) et vérifier l'état du système distant"
           >
             {isScanning ? (
               <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
@@ -436,6 +505,7 @@ export default function SiteInvestigation() {
             onClick={handleMalwareScan}
             disabled={isScanningMalware || isScanning}
             className="relative flex items-center justify-center gap-2.5 bg-slate-900 hover:bg-slate-800 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group border border-transparent"
+            title="Rechercher des Web Shells dans les fichiers"
           >
             {/* Petit indicateur visuel (pulse) pour inciter au clic */}
             {!isScanningMalware && !isScanning && (
@@ -444,7 +514,7 @@ export default function SiteInvestigation() {
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500 shadow"></span>
               </span>
             )}
-            
+
             <Search className={`w-4 h-4 ${isScanningMalware ? 'animate-spin text-orange-400' : 'text-orange-500 group-hover:-rotate-12 transition-transform'}`} />
             {isScanningMalware ? 'Investigation...' : 'Scanner Anti-Malware'}
           </button>
@@ -501,10 +571,25 @@ export default function SiteInvestigation() {
             <h3 className="text-slate-500 font-bold uppercase tracking-wider text-sm">Menaces Récentes</h3>
             <span className="p-2 bg-red-50 text-red-600 rounded-lg"><ShieldAlert className="w-5 h-5" /></span>
           </div>
-          <div>
-            <div className="text-4xl font-black text-slate-800">{site.alerts_count || 0}</div>
-            <div className="mt-2 text-sm text-red-500 font-medium flex items-center gap-1">
-              Alertes interceptées
+
+          <div className="flex items-center gap-6 mt-1">
+            {/* Métrique 1 : Alertes Actives (Mise en évidence) */}
+            <div>
+              <div className="text-4xl font-black text-red-600">{activeAlerts.length}</div>
+              <div className="mt-1.5 text-xs text-red-500 font-bold uppercase tracking-wider">
+                Actions requises
+              </div>
+            </div>
+
+            {/* Séparateur visuel */}
+            <div className="w-px h-12 bg-slate-200"></div>
+
+            {/* Métrique 2 : Total Historique */}
+            <div>
+              <div className="text-2xl font-black text-slate-700">{alerts.length}</div>
+              <div className="mt-1.5 text-xs text-slate-400 font-bold uppercase tracking-wider">
+                Total intercepté
+              </div>
             </div>
           </div>
         </div>
@@ -961,16 +1046,14 @@ export default function SiteInvestigation() {
       {scanResultModal && (
         <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md px-4 drop-shadow-2xl animate-popup-slide">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden ring-1 ring-black/5">
-            <div className={`p-5 border-b flex items-start gap-4 ${
-              scanResultModal.type === 'malware' && site?.malware_report?.length > 0 
-                ? 'bg-red-50 border-red-100 text-red-800' 
-                : 'bg-blue-50 border-blue-100 text-blue-800'
-            }`}>
-              <div className={`p-2.5 rounded-full shrink-0 ${
-                scanResultModal.type === 'malware' && site?.malware_report?.length > 0 
-                  ? 'bg-red-100 text-red-600' 
-                  : 'bg-blue-100 text-blue-600'
+            <div className={`p-5 border-b flex items-start gap-4 ${scanResultModal.type === 'malware' && site?.malware_report?.length > 0
+              ? 'bg-red-50 border-red-100 text-red-800'
+              : 'bg-blue-50 border-blue-100 text-blue-800'
               }`}>
+              <div className={`p-2.5 rounded-full shrink-0 ${scanResultModal.type === 'malware' && site?.malware_report?.length > 0
+                ? 'bg-red-100 text-red-600'
+                : 'bg-blue-100 text-blue-600'
+                }`}>
                 {scanResultModal.type === 'malware' ? <FileWarning className="w-5 h-5" /> : <Activity className="w-5 h-5" />}
               </div>
               <div>
@@ -978,7 +1061,7 @@ export default function SiteInvestigation() {
                 <p className="text-xs opacity-80 mt-0.5">Rapport de télémétrie instantané</p>
               </div>
             </div>
-            
+
             <div className="p-5 bg-white">
               <p className="text-slate-700 text-sm leading-relaxed font-medium">
                 {scanResultModal.text}
@@ -999,6 +1082,122 @@ export default function SiteInvestigation() {
                 Voir le résultat <ChevronRight className="w-4 h-4" />
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODALE DE ROTATION DU TOKEN (CONFIRMATION & SUCCÈS)         */}
+      {/* ========================================================= */}
+      {showTokenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Fond sombre */}
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity animate-in fade-in duration-300"
+            onClick={() => !isResettingToken && !newGeneratedToken && setShowTokenModal(false)}
+          ></div>
+
+          <div className="relative bg-white rounded-2xl md:rounded-3xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.3)] w-full max-w-xl overflow-hidden transform transition-all animate-in zoom-in-[0.97] fade-in duration-300 border border-slate-100 max-h-[90vh] overflow-y-auto z-10">
+
+            {newGeneratedToken ? (
+              /* --- ÉCRAN DE SUCCÈS (Affichage du Token) --- */
+              <div className="p-6 md:p-8">
+                <div className="mx-auto w-12 h-12 md:w-16 md:h-16 bg-emerald-50 border border-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-4 md:mb-6 shadow-sm relative">
+                  <span className="absolute inset-0 rounded-full animate-ping bg-emerald-400 opacity-20 duration-1000"></span>
+                  <CheckCircle2 className="w-6 h-6 md:w-8 md:h-8 relative z-10" />
+                </div>
+
+                <h3 className="text-xl md:text-2xl font-black text-center text-slate-800 tracking-tight mb-1 md:mb-2">Rotation Réussie</h3>
+                <p className="text-center text-slate-500 mb-6 md:mb-8 text-xs md:text-sm font-medium">Le nouveau jeton de communication a été généré.</p>
+
+                <div className="bg-amber-50/80 border border-amber-200/60 p-3 md:p-4 mb-4 md:mb-6 rounded-xl md:rounded-2xl relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-400"></div>
+                  <h4 className="text-xs md:text-sm font-bold text-amber-900 mb-1 flex items-center gap-1.5 md:gap-2">
+                    <ShieldAlert className="w-3.5 h-3.5 md:w-4 md:h-4 text-amber-600 shrink-0" />
+                    Sauvegarde Cryptographique Requise
+                  </h4>
+                  <p className="text-[10px] md:text-xs text-amber-800/80 leading-relaxed ml-5 md:ml-6">
+                    Copiez ce jeton pour configurer l'agent distant.
+                    <span className="block mt-1 font-bold text-amber-900">Il ne sera affiché qu'une seule fois.</span>
+                  </p>
+                </div>
+
+                <div className="bg-[#0B1120] p-1 md:p-1.5 rounded-xl md:rounded-2xl flex items-center justify-between gap-2 md:gap-3 mb-6 md:mb-8 shadow-inner ring-1 ring-slate-800/50">
+                  <code className="text-emerald-400 font-mono text-xs md:text-sm pl-3 md:pl-4 overflow-x-auto whitespace-nowrap scrollbar-hide select-all py-2 md:py-0">
+                    {newGeneratedToken}
+                  </code>
+                  <button
+                    onClick={handleCopyToken}
+                    className={`p-2 md:p-2.5 rounded-lg md:rounded-xl transition-all duration-300 shrink-0 flex items-center gap-1.5 md:gap-2 font-bold text-xs md:text-sm ${copied
+                        ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/50'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
+                      }`}
+                    title="Copier le jeton"
+                  >
+                    {copied ? (
+                      <><Check className="w-3.5 h-3.5 md:w-4 md:h-4" /> <span className="hidden sm:inline">Copié</span></>
+                    ) : (
+                      <><Copy className="w-3.5 h-3.5 md:w-4 md:h-4" /> <span className="hidden sm:inline">Copier</span></>
+                    )}
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowTokenModal(false);
+                    setNewGeneratedToken(null); // On purge le token de la mémoire front
+                  }}
+                  className="w-full px-4 py-3 md:py-3.5 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 font-bold text-sm md:text-base rounded-xl transition-colors ring-1 ring-slate-200/60"
+                >
+                  Terminer
+                </button>
+              </div>
+            ) : (
+              /* --- ÉCRAN DE CONFIRMATION (Avertissement) --- */
+              <>
+                <div className="p-6 bg-indigo-50 border-b border-indigo-100 flex items-start gap-4">
+                  <div className="p-3 bg-indigo-100 text-indigo-600 rounded-full shrink-0">
+                    <Key className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-indigo-900">Rotation des Clés (Key Rotation)</h3>
+                    <p className="text-indigo-700 text-sm mt-1">Vous allez révoquer le token de sécurité actuel de ce site.</p>
+                  </div>
+                </div>
+
+                <div className="p-6 bg-white">
+                  <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl">
+                    <h4 className="font-bold text-amber-800 flex items-center gap-2 text-sm">
+                      <AlertTriangle className="w-4 h-4" /> Coupure de communication
+                    </h4>
+                    <p className="text-sm text-amber-700 mt-2 font-medium leading-relaxed">
+                      Dès que vous confirmerez, l'ancienne clé sera détruite. La sonde télémétrique installée sur le site WordPress ne pourra plus envoyer d'alertes tant que vous n'aurez pas mis à jour sa configuration avec le nouveau token.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowTokenModal(false)}
+                    className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg transition-colors"
+                    disabled={isResettingToken}
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleRegenerateToken}
+                    disabled={isResettingToken}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isResettingToken ? (
+                      <><RefreshCw className="w-4 h-4 animate-spin" /> Génération...</>
+                    ) : (
+                      <><Key className="w-4 h-4" /> Confirmer la Rotation</>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

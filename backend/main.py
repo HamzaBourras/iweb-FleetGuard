@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, Header, APIRouter
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, selectinload
 from sqlalchemy.ext.declarative import declarative_base
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -249,13 +249,28 @@ def get_all_sites(
     token: str = Depends(oauth2_scheme), 
     db: Session = Depends(get_db)
 ):
-    # NETTOYAGE AUTOMATIQUE : On supprime physiquement les sites en attente depuis plus de 12h
+    # 1. NETTOYAGE AUTOMATIQUE : Suppression des sites en attente depuis plus de 12h
     limite_retention = datetime.utcnow() - timedelta(hours=12)
     db.query(models.ClientSite).filter(models.ClientSite.deleted_at < limite_retention).delete()
     db.commit()
 
-    # On renvoie tous les sites restants (actifs ET en cours de suppression)
-    return db.query(models.ClientSite).all()
+    # 2. RÉCUPÉRATION DES SITES ET DE LEURS ALERTES
+    # selectinload attache la liste des objets SecurityAlert directement au modèle ClientSite
+    sites = db.query(models.ClientSite).options(
+        selectinload(models.ClientSite.alerts) 
+    ).all()
+
+    # 3. AJOUT DES MÉTRIQUES POUR LE DASHBOARD
+    for site in sites:
+        # On s'assure d'avoir la variable alerts_count pour le composant React
+        if hasattr(site, 'alerts'):
+            # On filtre pour ne compter que les alertes non archivées/résolues
+            active_alerts = [a for a in site.alerts if a.status != "resolved"]
+            site.alerts_count = len(active_alerts)
+        else:
+            site.alerts_count = 0
+
+    return sites
 
 #**** Ajout d'un nouveau site client (protégé par JWT) ****
 # --- SCHÉMA DE DONNÉES ---
@@ -666,6 +681,42 @@ async def delete_malicious_file(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# --- ROUTE DE RÉGÉNÉRATION DU TOKEN D'UN SITE ---
+@app.post("/api/sites/{site_id}/regenerate-token")
+def regenerate_site_token(
+    site_id: int, 
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+):
+    """
+    Révoque l'ancien token d'un site et en génère un nouveau cryptographiquement sécurisé.
+    Action critique (Key Rotation).
+    """
+    # 1. Vérification de l'existence du site
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Cible introuvable.")
+
+    # 1. Génération du token en clair (celui qu'on va montrer à l'admin)
+    raw_token = f"IWEB_{secrets.token_urlsafe(32)}"
+    
+    # 2. CHIFFREMENT SYMÉTRIQUE (Réversible) au lieu du hachage
+    encrypted_token = security.encrypt_token(raw_token)
+
+    # 3. Révocation et mise à jour dans la base de données
+    # ⚠️ IMPORTANT : Remplace 'site_token' par le nom exact de ta colonne dans ton modèle (ex: api_key, token, etc.)
+    site.secret_token = encrypted_token 
+    
+    db.commit()
+    db.refresh(site)
+
+    # 4. Retour des nouvelles informations
+    return {
+        "message": "Clé cryptographique révoquée et régénérée avec succès.",
+        "site_id": site.id,
+        "new_token": raw_token  # 🔑 Le token en clair pour l'admin (à copier immédiatement)
+    }
 
 
 
