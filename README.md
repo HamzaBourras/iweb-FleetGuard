@@ -173,21 +173,30 @@ Afin de permettre au site de production de communiquer avec l'API locale en cour
 * Utilisation de **Ngrok** (ou Cloudflare Tunnels) pour exposer le port `8000` du conteneur Docker FastAPI vers une URL HTTPS publique temporaire.
 * L'URL générée est injectée dans la configuration de l'agent PHP pour acheminer les payloads JSON.
 
-### 4. Simulation d'Intrusion (Brute Force)
-Une fois l'agent armé et le tunnel ouvert, un script Python simule le comportement d'un attaquant automatisé pour valider la réactivité du SOC (Security Operations Center).
 
-```python
-import requests
-import time
 
-WP_LOGIN_URL = "[https://votre-site-cible.com/wp-login.php](https://votre-site-cible.com/wp-login.php)"
-usernames = ["admin", "root", "webmaster"]
+## Phase 5 : Investigation Forensique & Réponse aux Incidents (DevSecOps)
 
-for username in usernames:
-    payload = {'log': username, 'pwd': 'FauxPassword123!', 'wp-submit': 'Log In'}
-    requests.post(WP_LOGIN_URL, data=payload)
-    time.sleep(2)
+Cette phase transforme la plateforme en un véritable centre de réponse aux incidents (Incident Response), permettant aux analystes d'auditer et d'assainir les sites de la flotte à distance.
 
+### 1. Audit d'Infrastructure & SBOM (Software Bill of Materials)
+* **Threat Intelligence (Renseignement sur les Menaces) :** Évaluation dynamique de la vétusté des composants sans dette technique. Le tableau de bord interroge en temps réel des API publiques de référence (`api.wordpress.org` et `endoflife.date`) pour comparer l'inventaire de la cible avec les dernières versions sécurisées (CMS) et les branches encore maintenues (PHP). Les environnements en fin de vie (EOL) sont instantanément flaggués.
+* **Cartographie des Composants :** Remontée des versions du cœur WordPress, de l'environnement PHP et de la liste complète des extensions.
+* **Hardening :** Identification automatique des environnements obsolètes (ex: PHP 5.x/7.x) nécessitant une mise à jour critique.
+* **Traçabilité Admin :** Suivi de l'horodatage et de l'adresse IP de la dernière connexion au panel administrateur de chaque cible.
+
+### 2. Scanner Anti-Malware Heuristique
+* **Investigation de Fichiers :** Analyse du système de fichiers distant (notamment le dossier `uploads`) pour détecter la présence de Web Shells ou de portes dérobées (Backdoors).
+* **Liste Blanche (Whitelisting) :** Gestion intelligente des faux positifs en permettant de marquer un fichier suspect comme "sain" pour l'ignorer lors des scans ultérieurs.
+
+### 3. Réponse à Incident (Remédiation Active)
+* **Destruction de Payloads :** Capacité de supprimer un fichier malveillant de manière irréversible directement depuis le serveur distant, sécurisée par une modale de confirmation.
+* **Archivage des Menaces :** Résolution manuelle et archivage des alertes de sécurité une fois l'investigation terminée par l'analyste SOC.
+* **File d'Attente de Triage :** Interface compacte et dynamique affichant les sites critiques nécessitant une intervention urgente, classés selon un *Health Score* (0 à 100) recalculé en temps réel en fonction des alertes actives.
+
+### 4. Gestion du Cycle de Vie des Clés (Key Rotation)
+* **Révocation Instantanée :** Mécanisme d'urgence permettant de révoquer l'accès d'un agent compromis et de régénérer un nouveau jeton cryptographique à la volée.
+* **Distribution Sécurisée :** Affichage unique (*Read-Once*) du nouveau jeton (chiffré en base de données via l'algorithme symétrique Fernet) pour faciliter la reconfiguration manuelle de la sonde distante.
 
 
 👨‍💻 Auteur

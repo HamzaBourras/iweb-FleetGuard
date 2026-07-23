@@ -36,6 +36,13 @@ export default function SiteInvestigation() {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
 
+  // --- ÉTATS POUR L'INTELLIGENCE DES VERSIONS WP et PHP
+  const [officialVersions, setOfficialVersions] = useState({
+    wp: null,             // La dernière version exacte de WP
+    phpLatest: null,      // La toute dernière version de PHP
+    activePhpCycles: []   // Les branches PHP encore sécurisées (ex: ["8.1", "8.2", "8.3"])
+  });
+
   // État pour stocker les alertes reçues de l'agent PHP
   const [alerts, setAlerts] = useState([]);
 
@@ -99,8 +106,24 @@ export default function SiteInvestigation() {
     malwarePage * malwaresPerPage
   );
 
-  // 🧠 Logique de détection des versions obsolètes (Hardening)
-  const isPhpObsolete = site?.php_version && (site.php_version.startsWith('7.') || site.php_version.startsWith('5.'));
+  // 🧠 Logique de détection dynamique des vulnérabilités (Hardening)
+
+  // A. Évaluation WordPress
+  // On considère WP obsolète si la version du site est différente de la dernière version officielle
+  const isWpObsolete = site?.wp_version && officialVersions.wp 
+    ? site.wp_version !== officialVersions.wp 
+    : false;
+
+  // B. Évaluation PHP
+  // On extrait la branche du site (ex: "7.4.33" devient "7.4")
+  const sitePhpCycle = site?.php_version ? site.php_version.split('.').slice(0, 2).join('.') : null;
+  
+  // PHP est obsolète si sa branche n'est plus dans la liste des branches maintenues
+  const isPhpObsolete = sitePhpCycle && officialVersions.activePhpCycles.length > 0 
+    ? !officialVersions.activePhpCycles.includes(sitePhpCycle) 
+    : false;
+
+
 
   // 1. Fonction pour charger les données de l'actif depuis FastAPI
   const fetchSiteInvestigations = async () => {
@@ -145,7 +168,28 @@ export default function SiteInvestigation() {
     };
   }, [site, setDynamicSiteName]);
 
-  // 🎯 Auto-correction de la pagination (Alertes)
+  // 🧠 Renseignement sur les menaces : Récupération depuis le proxy sécurisé FastAPI
+  useEffect(() => {
+    const fetchThreatIntel = async () => {
+      const token = localStorage.getItem('fleetguard_token');
+      try {
+        const response = await fetch('http://localhost:8000/api/site/threat-intel', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error("Impossible de récupérer les indicateurs de compromission.");
+        
+        const intelData = await response.json();
+        setOfficialVersions(intelData);
+      } catch (error) {
+        console.error("Erreur Threat Intel :", error);
+      }
+    };
+
+    fetchThreatIntel();
+  }, []);
+
+  // Auto-correction de la pagination (Alertes)
   // Si la page actuelle se vide et devient supérieure au total de pages restant, on recule d'une page
   useEffect(() => {
     if (totalAlertPages > 0 && alertPage > totalAlertPages) {
@@ -680,34 +724,53 @@ export default function SiteInvestigation() {
 
         <div className="p-6">
           {/* Noyau & Serveur */}
+          {/* Noyau & Serveur */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-8">
+            
             {/* Version WordPress */}
-            <div className="flex items-center justify-between p-4 border border-slate-200 rounded-xl bg-slate-50/30">
-              <div className="flex items-center gap-3">
-                <Globe className="w-5 h-5 text-slate-400" />
-                <div>
-                  <p className="text-sm font-bold text-slate-700">Noyau WordPress</p>
-                  <p className="text-xs text-slate-500">CMS</p>
+            <div className={`flex flex-col justify-center p-4 border rounded-xl ${isWpObsolete ? 'border-orange-200 bg-orange-50' : 'border-slate-200 bg-slate-50/30'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <Globe className={`w-5 h-5 ${isWpObsolete ? 'text-orange-500' : 'text-slate-400'}`} />
+                  <div>
+                    <p className={`text-sm font-bold ${isWpObsolete ? 'text-orange-700' : 'text-slate-700'}`}>Noyau WordPress</p>
+                    {isWpObsolete && <p className="text-[10px] text-orange-600 font-bold uppercase tracking-wider mt-0.5">Mise à jour requise</p>}
+                  </div>
                 </div>
+                <span className={`font-mono font-bold px-3 py-1.5 rounded text-sm ${isWpObsolete ? 'bg-orange-200 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
+                  {site?.wp_version ? `v${site.wp_version}` : 'Inconnue'}
+                </span>
               </div>
-              <span className="font-mono font-bold bg-slate-100 px-3 py-1.5 rounded text-slate-700 text-sm">
-                {site?.wp_version ? `v${site.wp_version}` : 'Inconnue'}
-              </span>
+              {/* Ligne de comparaison intelligente */}
+              {officialVersions.wp && isWpObsolete && (
+                <div className="text-xs text-orange-600/80 font-medium border-t border-orange-200/50 pt-2 mt-1">
+                  Dernière version sécurisée : <strong className="font-mono">v{officialVersions.wp}</strong>
+                </div>
+              )}
             </div>
 
             {/* Version PHP avec alerte si obsolète */}
-            <div className={`flex items-center justify-between p-4 border rounded-xl ${isPhpObsolete ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50/30'}`}>
-              <div className="flex items-center gap-3">
-                <Terminal className={`w-5 h-5 ${isPhpObsolete ? 'text-red-500' : 'text-slate-400'}`} />
-                <div>
-                  <p className={`text-sm font-bold ${isPhpObsolete ? 'text-red-700' : 'text-slate-700'}`}>Environnement PHP</p>
-                  {isPhpObsolete && <p className="text-xs text-red-500 font-semibold mt-0.5">Obsolète (Fin de vie)</p>}
+            <div className={`flex flex-col justify-center p-4 border rounded-xl ${isPhpObsolete ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50/30'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <Terminal className={`w-5 h-5 ${isPhpObsolete ? 'text-red-500' : 'text-slate-400'}`} />
+                  <div>
+                    <p className={`text-sm font-bold ${isPhpObsolete ? 'text-red-700' : 'text-slate-700'}`}>Environnement PHP</p>
+                    {isPhpObsolete && <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider mt-0.5">Fin de vie (Vulnérable)</p>}
+                  </div>
                 </div>
+                <span className={`font-mono font-bold px-3 py-1.5 rounded text-sm ${isPhpObsolete ? 'bg-red-200 text-red-800' : 'bg-slate-100 text-slate-700'}`}>
+                  {site?.php_version || 'Inconnue'}
+                </span>
               </div>
-              <span className={`font-mono font-bold px-3 py-1.5 rounded text-sm ${isPhpObsolete ? 'bg-red-200 text-red-800' : 'bg-slate-100 text-slate-700'}`}>
-                {site?.php_version || 'Inconnue'}
-              </span>
+              {/* Ligne de comparaison intelligente */}
+              {officialVersions.phpLatest && isPhpObsolete && (
+                <div className="text-xs text-red-600/80 font-medium border-t border-red-200/50 pt-2 mt-1">
+                  Branche active recommandée : <strong className="font-mono">v{officialVersions.activePhpCycles[0]}</strong> (ou <span className="font-mono">{officialVersions.phpLatest}</span>)
+                </div>
+              )}
             </div>
+            
           </div>
 
           {/* Liste des Plugins */}
