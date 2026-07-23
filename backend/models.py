@@ -63,6 +63,8 @@ class ClientSite(Base):
     last_admin_ip = Column(String, nullable=True)
     #colonne pour stocker le rapport du scan anti-malware :
     malware_report = Column(JSON, nullable=True)
+    # colonne pour stocker la liste des fichiers mis en liste blanche :
+    whitelisted_files = Column(JSON, default=list)
 
 
 class SecurityAlert(Base):

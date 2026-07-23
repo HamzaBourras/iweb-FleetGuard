@@ -19,7 +19,8 @@ import {
   X,
   Check,
   Key,
-  Copy
+  Copy,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function SiteInvestigation() {
@@ -37,6 +38,10 @@ export default function SiteInvestigation() {
 
   // État pour stocker les alertes reçues de l'agent PHP
   const [alerts, setAlerts] = useState([]);
+
+  // --- ÉTAT POUR LA GESTION DES FAUX POSITIFS ---
+  const [whitelistingFile, setWhitelistingFile] = useState(null); // Gère le spinner
+  const [fileToWhitelist, setFileToWhitelist] = useState(null);   // Gère l'ouverture de la modale
 
   // --- ÉTAT POUR LA MODALE DE RÉSULTAT DE SCAN ---
   const [scanResultModal, setScanResultModal] = useState(null); // { title: '...', type: 'audit' | 'malware', text: '...', targetSection: '...' }
@@ -361,6 +366,47 @@ export default function SiteInvestigation() {
       setShowTokenModal(false);
     } finally {
       setIsResettingToken(false);
+    }
+  };
+
+  
+  // 7. A. Ouvrir la modale de Faux Positif
+  const initiateWhitelist = (filePath) => {
+    setFileToWhitelist(filePath);
+  };
+
+  // 7. B. Fonction pour marquer un fichier comme sain après confirmation
+  const confirmWhitelistFile = async () => {
+    if (!fileToWhitelist) return;
+
+    const currentFile = fileToWhitelist;
+    setWhitelistingFile(currentFile); // Lance l'animation de chargement
+    setFileToWhitelist(null); // Ferme la modale immédiatement
+
+    const token = localStorage.getItem('fleetguard_token');
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/sites/${id}/whitelist-file`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ file_path: currentFile })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || 'Erreur lors du marquage du fichier.');
+      }
+
+      await fetchSiteInvestigations(); // Rafraîchit l'interface pour faire disparaître le fichier
+      showNotification('success', 'Le fichier a été marqué comme sain (Faux positif).');
+
+    } catch (err) {
+      showNotification('error', `Échec de l'opération : ${err.message}`);
+    } finally {
+      setWhitelistingFile(null); // Arrête l'animation
     }
   };
 
@@ -877,8 +923,11 @@ export default function SiteInvestigation() {
           ) : (
             <div className="space-y-4">
               {/* ✨ MODIFICATION ICI : On mappe sur currentMalwares au lieu de site.malware_report */}
+              {/* Liste des fichiers suspects */}
               {currentMalwares.map((file, index) => (
-                <div key={index} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl">
+                <div key={index} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl gap-4">
+                  
+                  {/* Infos sur le fichier */}
                   <div>
                     <h4 className="font-bold text-red-800 flex items-center gap-2">
                       <ShieldAlert className="w-4 h-4" /> {file.threat}
@@ -887,17 +936,39 @@ export default function SiteInvestigation() {
                       {file.file}
                     </p>
                   </div>
-                  <button
-                    onClick={() => initiateDelete(file.file)}
-                    disabled={deletingFile === file.file}
-                    className="mt-4 md:mt-0 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
-                  >
-                    {deletingFile === file.file ? (
-                      <><RefreshCw className="w-4 h-4 animate-spin" /> Destruction...</>
-                    ) : (
-                      'Détruire le fichier'
-                    )}
-                  </button>
+
+                  {/* Boutons d'action (Whitelist + Destruction) */}
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 mt-2 md:mt-0">
+                    
+                    {/* Bouton Ignorer / Faux Positif */}
+                    <button
+                      onClick={() => initiateWhitelist(file.file)}
+                      disabled={deletingFile === file.file || whitelistingFile === file.file}
+                      title="Marquer comme sain et ignorer lors des prochains scans"
+                      className="bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 hover:border-emerald-200 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 flex-1 md:flex-none justify-center"
+                    >
+                      {whitelistingFile === file.file ? (
+                        <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4" />
+                      )}
+                      <span className="whitespace-nowrap">Marquer Sain</span>
+                    </button>
+
+                    {/* Bouton Destruction */}
+                    <button
+                      onClick={() => initiateDelete(file.file)}
+                      disabled={deletingFile === file.file || whitelistingFile === file.file}
+                      className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 flex-1 md:flex-none justify-center"
+                    >
+                      {deletingFile === file.file ? (
+                        <><RefreshCw className="w-4 h-4 animate-spin" /> Destruction...</>
+                      ) : (
+                        'Détruire'
+                      )}
+                    </button>
+                    
+                  </div>
                 </div>
               ))}
 
@@ -1198,6 +1269,49 @@ export default function SiteInvestigation() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODALE DE CONFIRMATION (FAUX POSITIF / WHITELIST)         */}
+      {/* ========================================================= */}
+      {fileToWhitelist && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden scale-100 transition-transform">
+            <div className="p-6 bg-emerald-50 border-b border-emerald-100 flex items-start gap-4">
+              <div className="p-3 bg-emerald-100 text-emerald-600 rounded-full shrink-0">
+                <ShieldCheck className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-emerald-800">Validation Forensique</h3>
+                <p className="text-emerald-600 text-sm mt-1">Vous êtes sur le point de marquer ce fichier comme légitime (Faux Positif).</p>
+              </div>
+            </div>
+            <div className="p-6 bg-white">
+              <p className="text-sm font-bold text-slate-700 mb-2">Fichier concerné :</p>
+              <p className="font-mono text-sm text-emerald-700 bg-emerald-50 px-3 py-2 rounded border border-emerald-100 break-all shadow-inner">
+                {fileToWhitelist}
+              </p>
+              <p className="text-slate-500 text-sm mt-4 font-medium flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                Il sera ignoré lors des prochains scans anti-malware.
+              </p>
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setFileToWhitelist(null)}
+                className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmWhitelistFile}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2"
+              >
+                <ShieldCheck className="w-4 h-4" /> Confirmer comme sain
+              </button>
+            </div>
           </div>
         </div>
       )}

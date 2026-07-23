@@ -106,6 +106,7 @@ def recalculate_health_score(site, db: Session):
             
             # On s'assure que le score ne tombe pas sous 20 (sauf en cas de malware)
             site.health_score = max(20, new_score)
+    
 
     db.commit()
     db.refresh(site)
@@ -404,7 +405,7 @@ async def resolve_security_alert(
     db: Session = Depends(get_db)
 ):
     try:
-        # ⚠️ Remplace 'models.SecurityAlert' par le vrai nom de ta classe
+        
         alert = db.query(models.SecurityAlert).filter(
             models.SecurityAlert.id == alert_id,
             models.SecurityAlert.site_id == site_id
@@ -417,7 +418,7 @@ async def resolve_security_alert(
         alert.status = "resolved"
         db.commit()
 
-        # ✨ NOUVEAU : On récupère le site et on met à jour son score
+        # On récupère le site et on met à jour son score
         site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
         if site:
             recalculate_health_score(site, db)
@@ -446,6 +447,11 @@ def get_single_site(
         
     # 2. Calculer dynamiquement le nombre d'alertes associées à ce site
     alerts_count = db.query(models.SecurityAlert).filter(models.SecurityAlert.site_id == site_id).count()
+
+     # On récupère le site et on met à jour son score
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    if site:
+        recalculate_health_score(site, db)
     
     # 3. Construire le dictionnaire de réponse attendu par React
     return {
@@ -590,11 +596,17 @@ async def run_malware_scan(
             scan_data = response.json()
 
         # 5. Mise à jour de la base de données avec les résultats du scan
-        malware_results = scan_data.get("malware_scan", [])
-        site.malware_report = malware_results
+       # Dans ta fonction de scan malware (lors de la réception de la réponse PHP) :
+        malwares_detectes = scan_data.get("malware_scan", [])
+        liste_blanche = site.whitelisted_files or []
+
+        # On ne garde que les malwares qui NE SONT PAS dans la liste blanche
+        menaces_reelles = [m for m in malwares_detectes if m['file'] not in liste_blanche]
+
+        site.malware_report = menaces_reelles
 
         # Si des fichiers malveillants sont trouvés, on fait chuter le score de santé
-        if len(malware_results) > 0:
+        if len(menaces_reelles) > 0:
             site.health_score = 0 
         
         db.commit()
@@ -602,7 +614,7 @@ async def run_malware_scan(
         
         return {
             "message": "Analyse anti-malware terminée avec succès",
-            "malware_report": malware_results
+            "malware_report": menaces_reelles
         }
 
     # --- LE FILET DE SÉCURITÉ ---
@@ -716,6 +728,67 @@ def regenerate_site_token(
         "message": "Clé cryptographique révoquée et régénérée avec succès.",
         "site_id": site.id,
         "new_token": raw_token  # 🔑 Le token en clair pour l'admin (à copier immédiatement)
+    }
+
+
+from pydantic import BaseModel
+
+class FileActionRequest(BaseModel):
+    file_path: str
+
+from sqlalchemy.orm.attributes import flag_modified
+
+@app.post("/api/sites/{site_id}/whitelist-file")
+def whitelist_site_file(
+    site_id: int,
+    payload: FileActionRequest,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """
+    Marque un fichier comme "Sain" (Faux Positif).
+    Il sera retiré des alertes actuelles et ignoré lors des prochains scans.
+    """
+    # 1. Vérifier que le site existe
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Cible introuvable.")
+
+    # 2. Initialiser la liste blanche si elle est vide
+    if site.whitelisted_files is None:
+        site.whitelisted_files = []
+
+    # 3. Ajouter le fichier à la liste blanche (s'il n'y est pas déjà)
+    if payload.file_path not in site.whitelisted_files:
+        # On clone la liste, on ajoute, puis on réaffecte pour forcer SQLAlchemy à voir le changement du JSON
+        current_whitelist = list(site.whitelisted_files)
+        current_whitelist.append(payload.file_path)
+        site.whitelisted_files = current_whitelist
+
+    # 4. Nettoyer le rapport actuel (supprimer le fichier des malwares détectés)
+    if site.malware_report:
+        # On filtre pour garder tous les fichiers SAUF celui qu'on vient de whitelister
+        updated_report = [
+            fichier for fichier in site.malware_report 
+            if fichier.get('file') != payload.file_path
+        ]
+        site.malware_report = updated_report
+        
+    # 5. Forcer la mise à jour des colonnes JSON dans PostgreSQL
+    flag_modified(site, "whitelisted_files")
+    flag_modified(site, "malware_report")
+
+    db.commit()
+
+     # On récupère le site et on met à jour son score
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    if site:
+        recalculate_health_score(site, db)
+
+    return {
+        "success": True, 
+        "message": "Fichier ajouté à la liste blanche d'exceptions avec succès."
     }
 
 
