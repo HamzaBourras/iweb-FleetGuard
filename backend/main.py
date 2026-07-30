@@ -1,12 +1,15 @@
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, APIRouter
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, selectinload
 from sqlalchemy.ext.declarative import declarative_base
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 import secrets
 from pydantic import BaseModel
 from datetime import datetime, timedelta
+import httpx
+import time
+from pydantic import BaseModel
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -62,6 +65,51 @@ def read_root():
 # On indique à FastAPI quelle route délivre les tokens
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
+# --- FONCTION DE RECALCUL DU SCORE DE SANTÉ du site ---
+def recalculate_health_score(site, db: Session):
+    """
+    Recalcule le score de santé du site basé sur les menaces actives.
+    - Présence de malware = 0/100 immédiat
+    - Par alerte active : critical (-15), high (-10), medium (-5), low/autres (-2)
+    - Plancher à 20/100 pour différencier d'une infection malware
+    - Zéro menace = 100/100
+    """
+    # 1. Vérification des malwares
+    has_malware = len(site.malware_report) > 0 if site.malware_report else False
+    
+    if has_malware:
+        site.health_score = 0
+    else:
+        # 2. Récupération des objets alertes non résolues (on utilise .all() au lieu de .count())
+        active_alerts = db.query(models.SecurityAlert).filter(
+            models.SecurityAlert.site_id == site.id,
+            models.SecurityAlert.status != "resolved"
+        ).all()
+        
+        if not active_alerts:
+            site.health_score = 100
+        else:
+            # 3. Calcul de la pénalité selon la gravité de l'alerte
+            penalite_score = 0
+            for event in active_alerts:
+                if event.severity == "critical":
+                    penalite_score += 15
+                elif event.severity == "high":
+                    penalite_score += 10
+                elif event.severity == "medium":
+                    penalite_score += 5
+                else:
+                    penalite_score += 2
+            
+            # On soustrait la pénalité totale de 100
+            new_score = 100 - penalite_score
+            
+            # On s'assure que le score ne tombe pas sous 20 (sauf en cas de malware)
+            site.health_score = max(20, new_score)
+    
+
+    db.commit()
+    db.refresh(site)
 
 # 4. Route pour recevoir les alertes de l'agent PHP
 @app.post("/api/alerts")
@@ -75,20 +123,25 @@ def receive_agent_alerts(
 
     token_recu = authorization.split(" ")[1]
 
-    # --- LA NOUVELLE LOGIQUE DE SÉCURITÉ EST ICI ---
+    # --- LOGIQUE DE SÉCURITÉ (FERNET) ---
     sites = db.query(models.ClientSite).all()
     site_client = None
     
-    # On boucle sur les sites et on utilise la fonction de vérification cryptographique
     for site in sites:
-        if security.verify_password(token_recu, site.secret_token):
-            site_client = site
-            break
+        try:
+            decrypted_token = security.decrypt_token(site.secret_token)
+            if token_recu == decrypted_token:
+                site_client = site
+                break
+        except Exception:
+            continue
 
     if not site_client:
         raise HTTPException(status_code=403, detail="Token refusé : Site inconnu, token invalide ou accès révoqué")
 
-    # ... (Le reste du code d'enregistrement de l'alerte reste identique) ...
+    # --- ENREGISTREMENT DES ALERTES ET CALCUL DU MALUS ---
+    penalite_score = 0
+
     for event in payload.security_events:
         nouvelle_alerte = models.SecurityAlert(
             site_id=site_client.id,
@@ -98,17 +151,37 @@ def receive_agent_alerts(
             ip_address=event.ip_address
         )
         db.add(nouvelle_alerte)
-    
+
+        # Calcul de la pénalité selon la gravité de l'alerte
+        if event.severity == "critical":
+            penalite_score += 15
+        elif event.severity == "high":
+            penalite_score += 10
+        elif event.severity == "medium":
+            penalite_score += 5
+        else:
+            penalite_score += 2
+            
+    # --- MISE À JOUR DU SCORE DE SANTÉ DU SITE ---
+    # On récupère le score actuel (ou 100 par défaut s'il est vide)
+    score_actuel = getattr(site_client, 'health_score', 100)
+    if score_actuel is None:
+        score_actuel = 100
+        
+    # On soustrait la pénalité en s'assurant que le score ne descende jamais en dessous de 0
+    nouveau_score = max(0, score_actuel - penalite_score)
+    site_client.health_score = nouveau_score
+
+    # On sauvegarde tout en une seule transaction (les alertes + le nouveau score)
     db.commit()
 
     return {
         "status": "success",
-        "message": f"{len(payload.security_events)} alerte(s) enregistrée(s) avec succès pour le site ID {site_client.id}"
+        "message": f"{len(payload.security_events)} alerte(s) enregistrée(s). Score de santé mis à jour à {nouveau_score}/100."
     }
 
 
 # --- ROUTES D'AUTHENTIFICATION DU TABLEAU DE BORD ---
-
 @app.post("/api/auth/login", response_model=schemas.Token)
 def login_admin(credentials: schemas.AdminLogin, db: Session = Depends(get_db)):
     # 1. On cherche l'administrateur par son email
@@ -177,13 +250,28 @@ def get_all_sites(
     token: str = Depends(oauth2_scheme), 
     db: Session = Depends(get_db)
 ):
-    # NETTOYAGE AUTOMATIQUE : On supprime physiquement les sites en attente depuis plus de 12h
+    # 1. NETTOYAGE AUTOMATIQUE : Suppression des sites en attente depuis plus de 12h
     limite_retention = datetime.utcnow() - timedelta(hours=12)
     db.query(models.ClientSite).filter(models.ClientSite.deleted_at < limite_retention).delete()
     db.commit()
 
-    # On renvoie tous les sites restants (actifs ET en cours de suppression)
-    return db.query(models.ClientSite).all()
+    # 2. RÉCUPÉRATION DES SITES ET DE LEURS ALERTES
+    # selectinload attache la liste des objets SecurityAlert directement au modèle ClientSite
+    sites = db.query(models.ClientSite).options(
+        selectinload(models.ClientSite.alerts) 
+    ).all()
+
+    # 3. AJOUT DES MÉTRIQUES POUR LE DASHBOARD
+    for site in sites:
+        # On s'assure d'avoir la variable alerts_count pour le composant React
+        if hasattr(site, 'alerts'):
+            # On filtre pour ne compter que les alertes non archivées/résolues
+            active_alerts = [a for a in site.alerts if a.status != "resolved"]
+            site.alerts_count = len(active_alerts)
+        else:
+            site.alerts_count = 0
+
+    return sites
 
 #**** Ajout d'un nouveau site client (protégé par JWT) ****
 # --- SCHÉMA DE DONNÉES ---
@@ -236,14 +324,14 @@ def create_site(
     # 1. Génération du token en clair (celui qu'on va montrer à l'admin)
     raw_token = f"IWEB_{secrets.token_urlsafe(32)}"
     
-    # 2. Hachage cryptographique du token (celui qu'on garde)
-    hashed_token = security.get_password_hash(raw_token)
+    # 2. CHIFFREMENT SYMÉTRIQUE (Réversible) au lieu du hachage
+    encrypted_token = security.encrypt_token(raw_token)
     
     # 3. Préparation et sauvegarde dans PostgreSQL avec le hash
     nouveau_site = models.ClientSite(
         site_name=site_data.site_name,
         url=site_data.url,
-        secret_token=hashed_token  # 🔒 Le serveur ne connaît plus le vrai token
+        secret_token=encrypted_token  # 🔒 Le serveur ne connaît plus le vrai token
     )
     
     db.add(nouveau_site)
@@ -259,6 +347,24 @@ def create_site(
         "secret_token": raw_token, 
         "status": "actif"
     }
+
+
+# --- ROUTE DE RÉCUPÉRATION DES ALERTES D'UN ACTIF SPÉCIFIQUE ---
+@app.get("/api/sites/{site_id}/alerts")
+def get_site_alerts(
+    site_id: int, 
+    limit: int = 10,
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+):
+    # On récupère les X dernières alertes de ce site spécifique, de la plus récente à la plus ancienne
+    alerts = db.query(models.SecurityAlert)\
+        .filter(models.SecurityAlert.site_id == site_id)\
+        .order_by(models.SecurityAlert.timestamp.desc())\
+        .limit(limit)\
+        .all()
+    
+    return alerts
 
 
 # --- ROUTE DE RÉCUPÉRATION DES ALERTES POUR LE DASHBOARD ---
@@ -285,11 +391,552 @@ def get_all_alerts(
             "severity": alerte.severity,
             "message": alerte.message,
             "ip_address": alerte.ip_address,
-            "timestamp": alerte.timestamp # <-- CHANGEMENT ICI
+            "timestamp": alerte.timestamp, # <-- CHANGEMENT ICI
+            "site_id": alerte.site_id
         })
 
     return resultats
 
+# --- ROUTE DE RÉSOLUTION D'UNE ALERTE SPÉCIFIQUE ---
+@app.patch("/api/sites/{site_id}/alerts/{alert_id}/resolve")
+async def resolve_security_alert(
+    site_id: int, 
+    alert_id: int, 
+    db: Session = Depends(get_db)
+):
+    try:
+        
+        alert = db.query(models.SecurityAlert).filter(
+            models.SecurityAlert.id == alert_id,
+            models.SecurityAlert.site_id == site_id
+        ).first()
+
+        if not alert:
+            raise HTTPException(status_code=404, detail="Alerte introuvable.")
+
+        # On archive l'alerte
+        alert.status = "resolved"
+        db.commit()
+
+        # On récupère le site et on met à jour son score
+        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+        if site:
+            recalculate_health_score(site, db)
+
+        return {"message": "Alerte archivée avec succès."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ROUTE DE RÉCUPÉRATION D'UN SEUL SITE (VUE DÉTAILLÉE) ---
+@app.get("/api/sites/{site_id}")
+def get_single_site(
+    site_id: int, 
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+):
+    # 1. Chercher le site ciblé dans la base de données
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Actif introuvable dans la flotte.")
+        
+    # 2. Calculer dynamiquement le nombre d'alertes associées à ce site
+    alerts_count = db.query(models.SecurityAlert).filter(models.SecurityAlert.site_id == site_id).count()
+
+     # On récupère le site et on met à jour son score
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    if site:
+        recalculate_health_score(site, db)
+    
+    # 3. Construire le dictionnaire de réponse attendu par React
+    return {
+        "id": site.id,
+        "site_name": site.site_name,
+        "url": site.url,
+        "status": "actif" if not site.deleted_at else "corbeille",
+        # On utilise getattr pour éviter les erreurs si les colonnes n'existent pas encore
+        "health_score": getattr(site, 'health_score', 0),
+        "wp_version": getattr(site, 'wp_version', None),
+        "php_version": getattr(site, 'php_version', None),
+        "last_scan_at": getattr(site, 'last_scan_at', None),
+        "plugins_inventory": getattr(site, 'plugins_inventory', []), 
+        "alerts_count": alerts_count,
+        # ✨ NOUVEAU : Envoi au Frontend
+        "last_admin_login": getattr(site, 'last_admin_login', None),
+        "last_admin_ip": getattr(site, 'last_admin_ip', None),
+        # ✨ NOUVEAU : Envoi du rapport anti-malware au Frontend
+        "malware_report": getattr(site, 'malware_report', []),
+        "auto_scan_enabled": getattr(site, 'auto_scan_enabled', None),
+        "scan_frequency": getattr(site, 'scan_frequency', None)
+    }
+
+
+# --- ROUTE DE SCAN FORÉNSIQUE D'UN SITE ---
+@app.post("/api/sites/{site_id}/scan")
+async def scan_site(
+    site_id: int, 
+    db: Session = Depends(get_db), 
+    # current_user: models.User = Depends(get_current_user)
+):
+    # 1. Vérifier que le site existe dans la base de données
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
+
+    # 2. Construire l'URL de l'endpoint de santé de l'agent PHP
+    # On utilise .rstrip('/') pour éviter les doubles slashes (ex: https://site.com//wp-json/...)
+    base_url = site.url.rstrip('/')
+    health_endpoint = f"{base_url}/wp-json/iwebcreative/v1/health"
+
+    # ✨ DÉCHIFFREMENT À LA VOLÉE
+    # On déchiffre le jeton stocké en BDD pour prouver notre identité à l'agent PHP
+    try:
+        decrypted_token = security.decrypt_token(site.secret_token)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Erreur interne : Impossible de déchiffrer le jeton de l'actif.")
+
+    # 3. Interroger l'agent PHP de manière asynchrone
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                health_endpoint,
+                headers={"Authorization": f"Bearer {decrypted_token}"} # <-- On utilise le jeton déchiffré
+            )
+            
+            # Vérification de l'authentification
+            if response.status_code == 401:
+                raise HTTPException(
+                    status_code=401, 
+                    detail="Accès refusé par la cible : Jeton de sécurité invalide ou révoqué."
+                )
+            
+            # Déclenche une exception pour les autres erreurs HTTP (500, 404, 403)
+            response.raise_for_status()
+            
+            scan_data = response.json()
+
+    except httpx.ConnectTimeout:
+        raise HTTPException(status_code=504, detail="Délai d'attente dépassé : Le site cible ne répond pas.")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"Erreur de communication avec la cible : {str(exc)}")
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail="La sonde PHP a retourné une erreur inattendue.")
+
+    # 4. Mettre à jour les données du site dans PostgreSQL
+    try:
+        site.last_scan_at = datetime.utcnow()
+        site.wp_version = scan_data.get("core", {}).get("wp_version")
+        site.php_version = scan_data.get("core", {}).get("php_version")
+        # ✨ NOUVEAU : Sauvegarde de la liste des plugins
+        site.plugins_inventory = scan_data.get("plugins", []) 
+
+        # ✨ NOUVEAU : Enregistrement de l'audit Admin
+        # On convertit la chaîne MySQL en objet datetime Python si elle existe
+        admin_login_str = scan_data.get("last_admin_login")
+        if admin_login_str:
+            site.last_admin_login = datetime.strptime(admin_login_str, '%Y-%m-%d %H:%M:%S')
+            
+        site.last_admin_ip = scan_data.get("last_admin_ip")
+        # ------------------------------------------------
+        
+        # site.health_score = 100 
+        
+        db.commit()
+        db.refresh(site)
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erreur lors de la sauvegarde des résultats du scan.")
+
+    # 5. Retourner le résultat au Frontend
+    return {
+        "message": "Analyse forensique terminée avec succès",
+        "telemetry": scan_data
+    }
+
+
+# --- SYSTÈME DE CACHE POUR LA THREAT INTELLIGENCE ---
+# Évite d'interroger les API externes à chaque requête (Cache valide 12 heures)
+THREAT_INTEL_CACHE = {
+    "data": None,
+    "last_updated": 0
+}
+CACHE_DURATION = 3600 * 12 # 12 heures en secondes
+
+@app.get("/api/site/threat-intel")
+async def get_threat_intelligence(token: str = Depends(oauth2_scheme)):
+    """
+    Récupère les dernières versions sécurisées de WP et PHP.
+    Agit comme un proxy pour isoler le front-end d'Internet.
+    """
+    global THREAT_INTEL_CACHE
+    current_time = time.time()
+    
+    # 1. Vérification du cache : s'il est récent, on le retourne directement
+    if THREAT_INTEL_CACHE["data"] and (current_time - THREAT_INTEL_CACHE["last_updated"]) < CACHE_DURATION:
+        return THREAT_INTEL_CACHE["data"]
+        
+    # 2. Si le cache est vide ou expiré, on interroge les sources officielles
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Récupération de la version WordPress
+            wp_res = await client.get("https://api.wordpress.org/core/version-check/1.7/")
+            wp_res.raise_for_status()
+            wp_data = wp_res.json()
+            latest_wp = wp_data.get("offers", [{}])[0].get("version", None)
+            
+            # Récupération des versions PHP maintenues
+            php_res = await client.get("https://endoflife.date/api/php.json")
+            php_res.raise_for_status()
+            php_data = php_res.json()
+            
+            today = datetime.utcnow().strftime('%Y-%m-%d')
+            # On ne garde que les branches dont la date de fin de vie (eol) est dans le futur
+            active_php_cycles = [v["cycle"] for v in php_data if v.get("eol", "") > today]
+            latest_php = php_data[0].get("latest") if php_data else None
+            
+            intel_data = {
+                "wp": latest_wp,
+                "phpLatest": latest_php,
+                "activePhpCycles": active_php_cycles
+            }
+            
+            # Mise à jour du cache local
+            THREAT_INTEL_CACHE["data"] = intel_data
+            THREAT_INTEL_CACHE["last_updated"] = current_time
+            
+            return intel_data
+            
+    except Exception as e:
+        # Filet de sécurité : en cas de coupure internet du serveur, on renvoie le vieux cache s'il existe
+        if THREAT_INTEL_CACHE["data"]:
+            return THREAT_INTEL_CACHE["data"]
+        raise HTTPException(status_code=503, detail="Service de Threat Intelligence temporairement indisponible.")
+
+
+# --- ROUTE DE SCAN ANTI-MALWARE D'UN SITE ---
+@app.post("/api/sites/{site_id}/malware-scan")
+async def run_malware_scan(
+    site_id: int, 
+    db: Session = Depends(get_db)
+):
+    try:
+        # 1. Vérification de l'existence du site
+        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+        if not site:
+            raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
+
+        # 2. Construction de l'URL vers la NOUVELLE route PHP
+        base_url = site.url.rstrip('/')
+        # ✨ CORRECTION : On ajoute un "Cache-Buster" à l'URL
+        timestamp_actuel = int(time.time())
+        scan_endpoint = f"{base_url}/wp-json/iwebcreative/v1/malware-scan?nocache={timestamp_actuel}"
+
+        # 3. Déchiffrement du Token
+        try:
+            decrypted_token = security.decrypt_token(site.secret_token)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Impossible de déchiffrer le jeton de l'actif.")
+
+        # 4. Requête avec un TIMEOUT ÉTENDU (60 secondes) pour l'analyse des fichiers
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(
+                scan_endpoint,
+                headers={"Authorization": f"Bearer {decrypted_token}"} 
+            )
+            if response.status_code == 401:
+                raise HTTPException(status_code=401, detail="Jeton de sécurité invalide ou révoqué.")
+            
+            response.raise_for_status()
+            scan_data = response.json()
+
+        # 5. Mise à jour de la base de données avec les résultats du scan
+       # Dans ta fonction de scan malware (lors de la réception de la réponse PHP) :
+        malwares_detectes = scan_data.get("malware_scan", [])
+        liste_blanche = site.whitelisted_files or []
+
+        # On ne garde que les malwares qui NE SONT PAS dans la liste blanche
+        menaces_reelles = [m for m in malwares_detectes if m['file'] not in liste_blanche]
+
+        site.malware_report = menaces_reelles
+
+        # Si des fichiers malveillants sont trouvés, on fait chuter le score de santé
+        if len(menaces_reelles) > 0:
+            site.health_score = 0 
+        
+        db.commit()
+        db.refresh(site)
+        
+        return {
+            "message": "Analyse anti-malware terminée avec succès",
+            "malware_report": menaces_reelles
+        }
+
+    # --- LE FILET DE SÉCURITÉ ---
+    except HTTPException:
+        raise 
+    except Exception as e:
+        db.rollback()
+        print("\n" + "="*50)
+        print("🚨 ERREUR FATALE LORS DU MALWARE SCAN 🚨")
+        print(traceback.format_exc())
+        print("="*50 + "\n")
+        raise HTTPException(status_code=500, detail=f"Erreur interne du serveur lors de l'analyse des fichiers. ({str(e)})")
+
+
+# --- ROUTE DE SUPPRESSION D'UN FICHIER MALVEILLANT SUR LE SITE ---
+# Modèle pour la requête de suppression
+class DeleteFileRequest(BaseModel):
+    file_path: str
+
+@app.post("/api/sites/{site_id}/delete-file")
+async def delete_malicious_file(
+    site_id: int, 
+    payload: DeleteFileRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+        if not site:
+            raise HTTPException(status_code=404, detail="Cible introuvable.")
+
+        base_url = site.url.rstrip('/')
+        delete_endpoint = f"{base_url}/wp-json/iwebcreative/v1/delete-file"
+        
+        try:
+            decrypted_token = security.decrypt_token(site.secret_token)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Erreur de déchiffrement du jeton.")
+
+        # Requête vers l'agent PHP
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                delete_endpoint,
+                headers={"Authorization": f"Bearer {decrypted_token}"},
+                json={"file_path": payload.file_path}
+            )
+            
+            if response.status_code == 401:
+                raise HTTPException(status_code=401, detail="Jeton de sécurité invalide.")
+            
+            # Si WordPress renvoie une erreur (ex: tentative de supprimer wp-config)
+            if response.status_code != 200:
+                err_data = response.json()
+                err_msg = err_data.get('message', 'Échec de la suppression sur le serveur distant.')
+                raise HTTPException(status_code=response.status_code, detail=err_msg)
+
+        # Si le fichier est bien supprimé, on le retire du JSON dans la base de données PostgreSQL
+        if site.malware_report:
+            updated_report = [f for f in site.malware_report if f.get('file') != payload.file_path]
+            site.malware_report = updated_report
+            
+            # Si c'était la dernière menace, on remonte le score de santé à 100
+            if len(updated_report) == 0:
+                site.health_score = 100 
+                
+            db.commit()
+
+            # ✨ NOUVEAU : On recalcule le score global
+            recalculate_health_score(site, db)
+
+        return {"message": "Payload détruit avec succès."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ROUTE DE RÉGÉNÉRATION DU TOKEN D'UN SITE ---
+@app.post("/api/sites/{site_id}/regenerate-token")
+def regenerate_site_token(
+    site_id: int, 
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+):
+    """
+    Révoque l'ancien token d'un site et en génère un nouveau cryptographiquement sécurisé.
+    Action critique (Key Rotation).
+    """
+    # 1. Vérification de l'existence du site
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Cible introuvable.")
+
+    # 1. Génération du token en clair (celui qu'on va montrer à l'admin)
+    raw_token = f"IWEB_{secrets.token_urlsafe(32)}"
+    
+    # 2. CHIFFREMENT SYMÉTRIQUE (Réversible) au lieu du hachage
+    encrypted_token = security.encrypt_token(raw_token)
+
+    # 3. Révocation et mise à jour dans la base de données
+    # ⚠️ IMPORTANT : Remplace 'site_token' par le nom exact de ta colonne dans ton modèle (ex: api_key, token, etc.)
+    site.secret_token = encrypted_token 
+    
+    db.commit()
+    db.refresh(site)
+
+    # 4. Retour des nouvelles informations
+    return {
+        "message": "Clé cryptographique révoquée et régénérée avec succès.",
+        "site_id": site.id,
+        "new_token": raw_token  # 🔑 Le token en clair pour l'admin (à copier immédiatement)
+    }
+
+
+from pydantic import BaseModel
+
+class FileActionRequest(BaseModel):
+    file_path: str
+
+from sqlalchemy.orm.attributes import flag_modified
+
+@app.post("/api/sites/{site_id}/whitelist-file")
+def whitelist_site_file(
+    site_id: int,
+    payload: FileActionRequest,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """
+    Marque un fichier comme "Sain" (Faux Positif).
+    Il sera retiré des alertes actuelles et ignoré lors des prochains scans.
+    """
+    # 1. Vérifier que le site existe
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Cible introuvable.")
+
+    # 2. Initialiser la liste blanche si elle est vide
+    if site.whitelisted_files is None:
+        site.whitelisted_files = []
+
+    # 3. Ajouter le fichier à la liste blanche (s'il n'y est pas déjà)
+    if payload.file_path not in site.whitelisted_files:
+        # On clone la liste, on ajoute, puis on réaffecte pour forcer SQLAlchemy à voir le changement du JSON
+        current_whitelist = list(site.whitelisted_files)
+        current_whitelist.append(payload.file_path)
+        site.whitelisted_files = current_whitelist
+
+    # 4. Nettoyer le rapport actuel (supprimer le fichier des malwares détectés)
+    if site.malware_report:
+        # On filtre pour garder tous les fichiers SAUF celui qu'on vient de whitelister
+        updated_report = [
+            fichier for fichier in site.malware_report 
+            if fichier.get('file') != payload.file_path
+        ]
+        site.malware_report = updated_report
+        
+    # 5. Forcer la mise à jour des colonnes JSON dans PostgreSQL
+    flag_modified(site, "whitelisted_files")
+    flag_modified(site, "malware_report")
+
+    db.commit()
+
+     # On récupère le site et on met à jour son score
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    if site:
+        recalculate_health_score(site, db)
+
+    return {
+        "success": True, 
+        "message": "Fichier ajouté à la liste blanche d'exceptions avec succès."
+    }
+
+# --- ROUTE DE MISE À JOUR DES PARAMÈTRES D'UN SITE (auto scan) ---
+@app.patch("/api/sites/{site_id}/settings")
+def update_site_settings(
+    site_id: int,
+    settings: schemas.SiteSettingsUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """Met à jour la configuration (ex: Auto-scan) d'un site."""
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Cible introuvable.")
+    
+    # On met à jour uniquement les champs envoyés
+    if settings.auto_scan_enabled is not None:
+        site.auto_scan_enabled = settings.auto_scan_enabled
+    if settings.scan_frequency is not None:
+        site.scan_frequency = settings.scan_frequency
+        
+    db.commit()
+    
+    return {
+        "message": "Configuration mise à jour",
+        "auto_scan_enabled": site.auto_scan_enabled,
+        "scan_frequency": site.scan_frequency
+    }
+
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+import asyncio
+
+# --- MOTEUR DE TÂCHES AUTOMATIQUES (CRON) ---
+scheduler = BackgroundScheduler()
+
+def run_automated_scans():
+    """
+    Fonction exécutée en tâche de fond. 
+    Elle ouvre une session BDD séparée car elle tourne hors du contexte web classique.
+    """
+    print("🤖 [Scheduler] Vérification des scans automatiques en attente...")
+    db = SessionLocal()
+    try:
+        # On cherche tous les sites avec auto_scan activé
+        sites_to_scan = db.query(models.ClientSite).filter(models.ClientSite.auto_scan_enabled == True).all()
+        
+        for site in sites_to_scan:
+            # Si le site n'a jamais été scanné, ou si le dernier scan date de plus de X heures
+            needs_scan = False
+            if not site.last_scan_at:
+                needs_scan = True
+            else:
+                heures_ecoulees = (datetime.utcnow() - site.last_scan_at).total_seconds() / 3600
+                if heures_ecoulees >= site.scan_frequency:
+                    needs_scan = True
+            
+            if needs_scan:
+                print(f"🔄 [Scheduler] Démarrage du scan automatique pour le site #{site.id}...")
+                # Étant donné que tes fonctions de scan (run_malware_scan, scan_site) sont asynchrones,
+                # il faut les lancer proprement depuis ce thread synchrone
+                asyncio.run(scan_site(site.id, db))
+                asyncio.run(run_malware_scan(site.id, db))
+                print(f"✅ [Scheduler] Scan terminé pour le site #{site.id}.")
+
+                # ✨ LA SÉCURITÉ RÉSEAU EST ICI ✨
+                # On force le backend à souffler pendant 5 secondes avant d'attaquer le site suivant
+                time.sleep(5)
+                
+    except Exception as e:
+        print(f"🚨 [Scheduler] Erreur critique : {str(e)}")
+    finally:
+        db.close()
+
+# On attache le planificateur au cycle de vie de FastAPI
+@app.on_event("startup")
+def start_scheduler():
+    # Le planificateur vérifie toutes les 1 heures (hours=1) s'il y a des scans à faire
+    scheduler.add_job(run_automated_scans, IntervalTrigger(hours=1))
+    scheduler.start()
+    print("⏱️ Planificateur de tâches (APScheduler) démarré.")
+
+@app.on_event("shutdown")
+def stop_scheduler():
+    scheduler.shutdown()
 
 
 

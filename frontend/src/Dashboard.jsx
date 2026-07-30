@@ -7,6 +7,9 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // 🎯 ÉTAT POUR LE TITRE DYNAMIQUE DE LA PAGE
+  const [dynamicSiteName, setDynamicSiteName] = useState("");
+
   // 📱 ÉTAT POUR LE MENU MOBILE
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -20,19 +23,22 @@ export default function Dashboard() {
 
   // 🎯 ROUTAGE DYNAMIQUE : Détermine le titre selon l'URL actuelle
   const getPageTitle = () => {
-    switch (location.pathname) {
-      case '/dashboard':
-        return "Vue d'ensemble";
-      case '/dashboard/sites':
-        return "Sites WordPress";
-      case '/dashboard/alerts':
-        return "Alertes de Sécurité";
-      case '/dashboard/guide':
-        return "Documentation"; // ✨ Le nouveau titre
-      default:
-        return "Tableau de bord";
+    const path = location.pathname;
+
+    if (path === '/dashboard') return "Vue d'ensemble";
+    if (path === '/dashboard/sites') return "Flotte WordPress";
+    if (path === '/dashboard/alerts') return "Alertes de Sécurité";
+    if (path === '/dashboard/guide') return "Documentation";
+
+    // Intercepte l'URL dynamique du détail du site
+    if (path.startsWith('/dashboard/sites/') && path.split('/').length === 4) {
+      // Si on a récupéré le nom du site, on l'affiche, sinon on met un titre générique
+      return dynamicSiteName ? `Investigation - ${dynamicSiteName}` : "Centre d'Investigation";
     }
+
+    return "Tableau de bord";
   };
+
 
   // ✨ UI/UX : Fonction utilitaire pour les animations du menu
   const navLinkClasses = ({ isActive }) =>
@@ -169,7 +175,7 @@ export default function Dashboard() {
 
         {/* CORPS DE LA PAGE */}
         <main className="p-4 md:p-8 flex-1 overflow-y-auto bg-slate-50/50">
-          <Outlet />
+          <Outlet context={{ setDynamicSiteName }} />
         </main>
       </div>
 

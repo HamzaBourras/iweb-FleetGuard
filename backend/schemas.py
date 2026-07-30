@@ -1,5 +1,21 @@
 from pydantic import BaseModel
-from typing import List
+from typing import Optional, List, Any
+
+# Schéma pour recevoir la mise à jour depuis React
+class SiteSettingsUpdate(BaseModel):
+    auto_scan_enabled: Optional[bool] = None
+    scan_frequency: Optional[int] = None
+
+
+class SiteResponse(BaseModel):
+    # ... tes autres attributs ...
+    
+    # Envoi au frontend
+    auto_scan_enabled: bool = False
+    scan_frequency: int = 24
+
+    class Config:
+        from_attributes = True
 
 # 1. Le moule pour une seule alerte
 class SecurityEvent(BaseModel):

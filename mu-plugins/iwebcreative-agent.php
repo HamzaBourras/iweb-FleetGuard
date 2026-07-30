@@ -16,9 +16,25 @@ define( 'IWEB_AGENT_SECRET_TOKEN', 'IWEB_SECURE_TOKEN_2026_XYZ' );
 
 // 3. Enregistrement de la route API REST personnalisée
 add_action( 'rest_api_init', function () {
+
+    // Route 1 : Inventaire rapide
     register_rest_route( 'iwebcreative/v1', '/health', [
         'methods'             => 'GET',
         'callback'            => 'iweb_get_health_data',
+        'permission_callback' => 'iweb_verify_bearer_token',
+    ] );
+
+    // ROUTE 2 : Scan profond anti-malware (indépendante)
+    register_rest_route( 'iwebcreative/v1', '/malware-scan', [
+        'methods'             => 'GET',
+        'callback'            => 'iweb_run_malware_scan',
+        'permission_callback' => 'iweb_verify_bearer_token',
+    ] );
+
+    // ROUTE 3 : Suppression de fichier malveillant
+    register_rest_route( 'iwebcreative/v1', '/delete-file', [
+        'methods'             => 'POST',
+        'callback'            => 'iweb_delete_malicious_file',
         'permission_callback' => 'iweb_verify_bearer_token',
     ] );
 } );
@@ -28,17 +44,37 @@ add_action( 'rest_api_init', function () {
  */
 function iweb_verify_bearer_token( WP_REST_Request $request ) {
     $auth_header = $request->get_header( 'authorization' );
-    $expected_header = 'Bearer ' . IWEB_AGENT_SECRET_TOKEN;
+    
+    // Vérification de la présence du format "Bearer "
+    if ( ! $auth_header || ! preg_match( '/Bearer\s(\S+)/', $auth_header, $matches ) ) {
+        return new WP_Error(
+            'rest_forbidden',
+            'Accès refusé : Jeton manquant ou mal formaté.',
+            [ 'status' => 401 ]
+        );
+    }
+    
+    $token_recu = $matches[1];
 
-    // Si le token correspond, on autorise l'accès
-    if ( $auth_header === $expected_header ) {
+    // On récupère le jeton stocké dynamiquement dans le code source
+    $token_local = IWEB_AGENT_SECRET_TOKEN; 
+
+    if ( ! $token_local ) {
+        return new WP_Error(
+            'rest_forbidden',
+            'Agent non configuré : Aucun jeton de sécurité enregistré sur ce site.',
+            [ 'status' => 401 ]
+        );
+    }
+
+    // Comparaison cryptographique sécurisée contre les attaques temporelles
+    if ( hash_equals( $token_local, $token_recu ) ) {
         return true;
     }
 
-    // Sinon, on renvoie une erreur 401 Non Autorisé
     return new WP_Error(
         'rest_forbidden',
-        'Accès refusé : Jeton de sécurité invalide ou manquant.',
+        'Accès refusé : Accès refusé par la cible : Jeton de sécurité invalide ou révoqué.',
         [ 'status' => 401 ]
     );
 }
@@ -48,36 +84,41 @@ function iweb_verify_bearer_token( WP_REST_Request $request ) {
  * 5. Collecte et formatage des données du site
  */
 function iweb_get_health_data() {
-    // Inclusion requise dans WordPress pour utiliser la fonction get_plugins()
     if ( ! function_exists( 'get_plugins' ) ) {
         require_once ABSPATH . 'wp-admin/includes/plugin.php';
     }
 
-    // Récupération de tous les plugins installés et de la liste de ceux qui sont actifs
     $all_plugins = get_plugins();
     $active_plugins_list = get_option( 'active_plugins', [] );
+
+    $last_admin_time = get_option( 'iweb_last_admin_login_time', null );
+    $last_admin_ip = get_option( 'iweb_last_admin_login_ip', null );
+    
+    // ✨ NOUVEAU : On interroge WordPress pour connaître les mises à jour en attente
+    wp_update_plugins(); // Force WP à vérifier (optionnel, mais garantit des données fraîches)
+    $update_plugins = get_site_transient( 'update_plugins' );
     
     $formatted_plugins = [];
 
-    // Boucle pour déterminer le statut de chaque plugin
     foreach ( $all_plugins as $plugin_path => $plugin_data ) {
         $is_active = in_array( $plugin_path, $active_plugins_list, true );
         
+        // ✨ NOUVEAU : Vérification de la disponibilité d'une mise à jour
+        $has_update = isset( $update_plugins->response[ $plugin_path ] );
+        $new_version = $has_update ? $update_plugins->response[ $plugin_path ]->new_version : null;
+        
         $formatted_plugins[] = [
-            'name'    => $plugin_data['Name'],
-            'version' => $plugin_data['Version'],
-            'status'  => $is_active ? 'active' : 'inactive',
-            'path'    => $plugin_path
+            'name'        => $plugin_data['Name'],
+            'version'     => $plugin_data['Version'],
+            'status'      => $is_active ? 'active' : 'inactive',
+            'path'        => $plugin_path,
+            'has_update'  => $has_update,  // true ou false
+            'new_version' => $new_version  // ex: "2.4.1" ou null
         ];
     }
 
-    // NOUVEAU : Récupérer les alertes de sécurité stockées par le Logger
     $security_events = get_transient( 'iweb_security_logs' ) ?: [];
     
-    // (Optionnel) Effacer les logs après les avoir lus pour ne pas les renvoyer en double la prochaine fois
-    // delete_transient( 'iweb_security_logs' );
-
-    // Construction et renvoi de la réponse au format JSON
     return rest_ensure_response( [
         'timestamp'       => current_time( 'mysql' ),
         'site_url'        => get_site_url(),
@@ -86,10 +127,11 @@ function iweb_get_health_data() {
             'php_version' => phpversion(),
         ],
         'plugins'         => $formatted_plugins,
-        'security_events' => $security_events // <-- Les événements sont maintenant envoyés au Dashboard !
+        'security_events' => $security_events,
+        'last_admin_login'=> $last_admin_time,
+        'last_admin_ip'   => $last_admin_ip
     ] );
 }
-
 
 /**
  * 6. Moteur de journalisation centralisé & Transmission (Push Model)
@@ -254,3 +296,131 @@ add_action( 'load-theme-editor.php', function() {
 add_action( 'load-plugin-editor.php', function() {
     iweb_log_security_event( 'file_editor_accessed', 'critical', "L'editeur de plugins interne WordPress a ete ouvert." );
 });
+
+
+// K. Suivi d'Audit : Enregistrement du dernier login administrateur réussi
+add_action( 'wp_login', function( $user_login, $user ) {
+    // On vérifie si l'utilisateur qui vient de se connecter a le rôle d'administrateur
+    if ( in_array( 'administrator', (array) $user->roles ) ) {
+        $ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field($_SERVER['REMOTE_ADDR']) : 'IP_Inconnue';
+        
+        // On sauvegarde l'heure et l'IP dans la base de données de WordPress (table wp_options)
+        update_option( 'iweb_last_admin_login_time', current_time( 'mysql' ) );
+        update_option( 'iweb_last_admin_login_ip', $ip );
+    }
+}, 10, 2 );
+
+
+// ========================================================================
+// 9. Scanner Heuristique de Fichiers (Module EDR Indépendant)
+// ========================================================================
+
+/**
+ * Fonction récursive sécurisée pour explorer les dossiers sans faire crasher PHP
+ */
+function iweb_safe_scan_directory( $dir, &$results, $depth = 0 ) {
+    // Sécurité : on limite la profondeur à 5 sous-dossiers pour éviter les timeouts
+    if ( $depth > 5 || ! is_dir( $dir ) ) return;
+
+    // L'arobase (@) ignore silencieusement les dossiers protégés
+    $files = @scandir( $dir );
+    if ( ! $files ) return;
+
+    foreach ( $files as $file ) {
+        if ( $file === '.' || $file === '..' ) continue;
+        
+        $path = $dir . '/' . $file;
+
+        if ( is_dir( $path ) ) {
+            iweb_safe_scan_directory( $path, $results, $depth + 1 );
+        } else {
+            $ext = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+            // On traque les extensions exécutables dans un dossier de médias
+            if ( in_array( $ext, ['php', 'phtml', 'php5', 'sh', 'pl', 'py', 'cgi'] ) ) {
+                $results[] = [
+                    'file'     => str_replace( ABSPATH, '', $path ),
+                    'threat'   => 'Web Shell ou script executable potentiel',
+                    'severity' => 'critical'
+                ];
+            }
+        }
+    }
+}
+
+/**
+ * Callback de la nouvelle route /malware-scan
+ */
+function iweb_run_malware_scan() {
+    $malicious_files = [];
+
+    // --- Zone Rouge 1 : Le dossier wp-content/uploads ---
+    $upload_dir = wp_upload_dir();
+    $upload_path = $upload_dir['basedir'];
+
+    if ( is_dir( $upload_path ) ) {
+        iweb_safe_scan_directory( $upload_path, $malicious_files, 0 );
+    }
+
+    // --- Zone Rouge 2 : Vérification du wp-config.php ---
+    $wp_config_path = ABSPATH . 'wp-config.php';
+    if ( ! file_exists( $wp_config_path ) ) {
+        $wp_config_path = dirname( ABSPATH ) . '/wp-config.php';
+    }
+
+    if ( file_exists( $wp_config_path ) ) {
+        $content = @file_get_contents( $wp_config_path ); 
+        if ( $content && preg_match( '/(eval\s*\(|base64_decode\s*\(|str_rot13\s*\()/i', $content ) ) {
+            $malicious_files[] = [
+                'file'     => 'wp-config.php',
+                'threat'   => 'Code obfusqué détecté (Injection de Backdoor probable)',
+                'severity' => 'critical'
+            ];
+        }
+    }
+
+    // On renvoie un JSON propre, séparé du reste de l'infrastructure
+    return rest_ensure_response( [
+        'timestamp'    => current_time( 'mysql' ),
+        'status'       => 'scan_completed',
+        'malware_scan' => $malicious_files
+    ] );
+}
+
+
+/**
+ * 10. Module d'Intervention : Suppression de fichier malveillant
+ */
+function iweb_delete_malicious_file( WP_REST_Request $request ) {
+    $params = $request->get_json_params();
+    $file_path = isset( $params['file_path'] ) ? sanitize_text_field( $params['file_path'] ) : '';
+
+    if ( empty( $file_path ) ) {
+        return new WP_Error( 'missing_param', 'Chemin du fichier manquant.', [ 'status' => 400 ] );
+    }
+
+    // 🚨 SÉCURITÉ ABSOLUE : On interdit la suppression hors du dossier uploads
+    if ( strpos( $file_path, 'wp-content/uploads' ) === false ) {
+        return new WP_Error( 
+            'forbidden_path', 
+            'Intervention refusée : Ce fichier est un fichier systeme. Nettoyage manuel requis via FTP.', 
+            [ 'status' => 403 ] 
+        );
+    }
+
+    // Construction du chemin absolu
+    $absolute_path = ABSPATH . ltrim( $file_path, '/' );
+
+    if ( ! file_exists( $absolute_path ) ) {
+        return new WP_Error( 'not_found', 'Fichier introuvable. Il a peut-etre deja ete supprime.', [ 'status' => 404 ] );
+    }
+
+    // Tentative de suppression (unlink)
+    if ( unlink( $absolute_path ) ) {
+        return rest_ensure_response( [ 
+            'success' => true, 
+            'message' => "Le payload malveillant a ete detruit avec succes." 
+        ] );
+    } else {
+        return new WP_Error( 'delete_failed', 'Impossible de supprimer le fichier. Verifiez les permissions (CHMOD) du serveur.', [ 'status' => 500 ] );
+    }
+}

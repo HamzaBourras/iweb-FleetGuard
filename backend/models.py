@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator, JSON, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from cryptography.fernet import Fernet
@@ -53,6 +53,22 @@ class ClientSite(Base):
     # NOUVELLE COLONNE : Stocke la date de demande de suppression
     deleted_at = Column(DateTime, nullable=True, default=None)
 
+    last_scan_at = Column(DateTime, nullable=True)
+    wp_version = Column(String, nullable=True)
+    php_version = Column(String, nullable=True)
+    health_score = Column(Integer, default=100)
+    #colonne pour stocker la liste des plugins :
+    plugins_inventory = Column(JSON, nullable=True)
+    last_admin_login = Column(DateTime, nullable=True)
+    last_admin_ip = Column(String, nullable=True)
+    #colonne pour stocker le rapport du scan anti-malware :
+    malware_report = Column(JSON, nullable=True)
+    # colonne pour stocker la liste des fichiers mis en liste blanche :
+    whitelisted_files = Column(JSON, default=list)
+    # Configuration des scans automatiques
+    auto_scan_enabled = Column(Boolean, default=False)
+    scan_frequency = Column(Integer, default=24) # Fréquence en heures (par défaut 24h)
+
 
 class SecurityAlert(Base):
     __tablename__ = "security_alerts"
@@ -67,6 +83,9 @@ class SecurityAlert(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     site = relationship("ClientSite", back_populates="alerts")
+
+    # Nouvelle colonne pour indiquer si l'alerte est active ou résolue
+    status = Column(String, default="active")
 
 
 class DashboardAdmin(Base):
