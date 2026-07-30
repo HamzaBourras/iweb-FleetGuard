@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator, JSON, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from cryptography.fernet import Fernet
@@ -65,6 +65,9 @@ class ClientSite(Base):
     malware_report = Column(JSON, nullable=True)
     # colonne pour stocker la liste des fichiers mis en liste blanche :
     whitelisted_files = Column(JSON, default=list)
+    # Configuration des scans automatiques
+    auto_scan_enabled = Column(Boolean, default=False)
+    scan_frequency = Column(Integer, default=24) # Fréquence en heures (par défaut 24h)
 
 
 class SecurityAlert(Base):

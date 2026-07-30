@@ -7,6 +7,13 @@ WORKDIR /app
 # On copie la liste de courses
 COPY requirements.txt .
 
+# # On installe les outils système requis par apscheduler (gcc et tzdata)
+# RUN apt-get update && apt-get install -y --no-install-recommends \
+#     gcc \
+#     libc6-dev \
+#     tzdata \
+#     && rm -rf /var/lib/apt/lists/*
+
 # On installe les dépendances (dont FastAPI, SQLAlchemy, et la cryptographie)
 RUN pip install --no-cache-dir -r requirements.txt
 

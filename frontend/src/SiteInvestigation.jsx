@@ -110,17 +110,17 @@ export default function SiteInvestigation() {
 
   // A. Évaluation WordPress
   // On considère WP obsolète si la version du site est différente de la dernière version officielle
-  const isWpObsolete = site?.wp_version && officialVersions.wp 
-    ? site.wp_version !== officialVersions.wp 
+  const isWpObsolete = site?.wp_version && officialVersions.wp
+    ? site.wp_version !== officialVersions.wp
     : false;
 
   // B. Évaluation PHP
   // On extrait la branche du site (ex: "7.4.33" devient "7.4")
   const sitePhpCycle = site?.php_version ? site.php_version.split('.').slice(0, 2).join('.') : null;
-  
+
   // PHP est obsolète si sa branche n'est plus dans la liste des branches maintenues
-  const isPhpObsolete = sitePhpCycle && officialVersions.activePhpCycles.length > 0 
-    ? !officialVersions.activePhpCycles.includes(sitePhpCycle) 
+  const isPhpObsolete = sitePhpCycle && officialVersions.activePhpCycles.length > 0
+    ? !officialVersions.activePhpCycles.includes(sitePhpCycle)
     : false;
 
 
@@ -176,9 +176,9 @@ export default function SiteInvestigation() {
         const response = await fetch('http://localhost:8000/api/site/threat-intel', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        
+
         if (!response.ok) throw new Error("Impossible de récupérer les indicateurs de compromission.");
-        
+
         const intelData = await response.json();
         setOfficialVersions(intelData);
       } catch (error) {
@@ -243,7 +243,6 @@ export default function SiteInvestigation() {
       setIsScanning(false);
     }
   };
-
 
   // 3. Fonction pour déclencher le scanner anti-malware
   const handleMalwareScan = async () => {
@@ -413,7 +412,7 @@ export default function SiteInvestigation() {
     }
   };
 
-  
+
   // 7. A. Ouvrir la modale de Faux Positif
   const initiateWhitelist = (filePath) => {
     setFileToWhitelist(filePath);
@@ -451,6 +450,34 @@ export default function SiteInvestigation() {
       showNotification('error', `Échec de l'opération : ${err.message}`);
     } finally {
       setWhitelistingFile(null); // Arrête l'animation
+    }
+  };
+
+  // 8. Fonction pour basculer le scan automatique
+  const toggleAutoScan = async () => {
+    const newValue = !site.auto_scan_enabled;
+    const token = localStorage.getItem('fleetguard_token');
+
+    // Mise à jour optimiste de l'UI (pour que le bouton réagisse instantanément)
+    setSite({ ...site, auto_scan_enabled: newValue });
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/sites/${id}/settings`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ auto_scan_enabled: newValue })
+      });
+
+      if (!response.ok) throw new Error();
+
+      showNotification('success', `Scan automatique ${newValue ? 'activé (Toutes les 24h)' : 'désactivé'}.`);
+    } catch (err) {
+      // En cas d'erreur, on annule le changement visuel
+      setSite({ ...site, auto_scan_enabled: !newValue });
+      showNotification('error', "Impossible de modifier la configuration.");
     }
   };
 
@@ -564,6 +591,24 @@ export default function SiteInvestigation() {
 
         {/* ✨ PANNEAU DE CONTRÔLE (ACTIONS SEC OPS) ✨ */}
         <div className="flex flex-col sm:flex-row items-stretch gap-2 p-1.5 bg-slate-100/80 backdrop-blur-sm rounded-2xl border border-slate-200/80 shadow-inner w-full lg:w-auto mt-4 lg:mt-0">
+
+          {/* Switch Scan Automatique */}
+          <div className="flex items-center gap-3 px-4 py-2 border-r border-slate-200/60 mr-2">
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-slate-700">Scan Auto (24h)</span>
+              <span className="text-[10px] text-slate-500 font-medium">Anti-Malware & SBOM</span>
+            </div>
+            <button
+              onClick={toggleAutoScan}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${site?.auto_scan_enabled ? 'bg-emerald-500' : 'bg-slate-300'
+                }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${site?.auto_scan_enabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+              />
+            </button>
+          </div>
 
           {/* 3. Bouton Régénérer Token (Key Rotation) */}
           <button
@@ -726,7 +771,7 @@ export default function SiteInvestigation() {
           {/* Noyau & Serveur */}
           {/* Noyau & Serveur */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-8">
-            
+
             {/* Version WordPress */}
             <div className={`flex flex-col justify-center p-4 border rounded-xl ${isWpObsolete ? 'border-orange-200 bg-orange-50' : 'border-slate-200 bg-slate-50/30'}`}>
               <div className="flex items-center justify-between mb-2">
@@ -770,7 +815,7 @@ export default function SiteInvestigation() {
                 </div>
               )}
             </div>
-            
+
           </div>
 
           {/* Liste des Plugins */}
@@ -989,7 +1034,7 @@ export default function SiteInvestigation() {
               {/* Liste des fichiers suspects */}
               {currentMalwares.map((file, index) => (
                 <div key={index} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl gap-4">
-                  
+
                   {/* Infos sur le fichier */}
                   <div>
                     <h4 className="font-bold text-red-800 flex items-center gap-2">
@@ -1002,7 +1047,7 @@ export default function SiteInvestigation() {
 
                   {/* Boutons d'action (Whitelist + Destruction) */}
                   <div className="flex flex-wrap items-center gap-2 shrink-0 mt-2 md:mt-0">
-                    
+
                     {/* Bouton Ignorer / Faux Positif */}
                     <button
                       onClick={() => initiateWhitelist(file.file)}
@@ -1030,7 +1075,7 @@ export default function SiteInvestigation() {
                         'Détruire'
                       )}
                     </button>
-                    
+
                   </div>
                 </div>
               ))}
@@ -1263,8 +1308,8 @@ export default function SiteInvestigation() {
                   <button
                     onClick={handleCopyToken}
                     className={`p-2 md:p-2.5 rounded-lg md:rounded-xl transition-all duration-300 shrink-0 flex items-center gap-1.5 md:gap-2 font-bold text-xs md:text-sm ${copied
-                        ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/50'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
+                      ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/50'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
                       }`}
                     title="Copier le jeton"
                   >

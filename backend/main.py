@@ -470,7 +470,9 @@ def get_single_site(
         "last_admin_login": getattr(site, 'last_admin_login', None),
         "last_admin_ip": getattr(site, 'last_admin_ip', None),
         # ✨ NOUVEAU : Envoi du rapport anti-malware au Frontend
-        "malware_report": getattr(site, 'malware_report', [])
+        "malware_report": getattr(site, 'malware_report', []),
+        "auto_scan_enabled": getattr(site, 'auto_scan_enabled', None),
+        "scan_frequency": getattr(site, 'scan_frequency', None)
     }
 
 
@@ -849,6 +851,96 @@ def whitelist_site_file(
         "success": True, 
         "message": "Fichier ajouté à la liste blanche d'exceptions avec succès."
     }
+
+# --- ROUTE DE MISE À JOUR DES PARAMÈTRES D'UN SITE (auto scan) ---
+@app.patch("/api/sites/{site_id}/settings")
+def update_site_settings(
+    site_id: int,
+    settings: schemas.SiteSettingsUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """Met à jour la configuration (ex: Auto-scan) d'un site."""
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Cible introuvable.")
+    
+    # On met à jour uniquement les champs envoyés
+    if settings.auto_scan_enabled is not None:
+        site.auto_scan_enabled = settings.auto_scan_enabled
+    if settings.scan_frequency is not None:
+        site.scan_frequency = settings.scan_frequency
+        
+    db.commit()
+    
+    return {
+        "message": "Configuration mise à jour",
+        "auto_scan_enabled": site.auto_scan_enabled,
+        "scan_frequency": site.scan_frequency
+    }
+
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+import asyncio
+
+# --- MOTEUR DE TÂCHES AUTOMATIQUES (CRON) ---
+scheduler = BackgroundScheduler()
+
+def run_automated_scans():
+    """
+    Fonction exécutée en tâche de fond. 
+    Elle ouvre une session BDD séparée car elle tourne hors du contexte web classique.
+    """
+    print("🤖 [Scheduler] Vérification des scans automatiques en attente...")
+    db = SessionLocal()
+    try:
+        # On cherche tous les sites avec auto_scan activé
+        sites_to_scan = db.query(models.ClientSite).filter(models.ClientSite.auto_scan_enabled == True).all()
+        
+        for site in sites_to_scan:
+            # Si le site n'a jamais été scanné, ou si le dernier scan date de plus de X heures
+            needs_scan = False
+            if not site.last_scan_at:
+                needs_scan = True
+            else:
+                heures_ecoulees = (datetime.utcnow() - site.last_scan_at).total_seconds() / 3600
+                if heures_ecoulees >= site.scan_frequency:
+                    needs_scan = True
+            
+            if needs_scan:
+                print(f"🔄 [Scheduler] Démarrage du scan automatique pour le site #{site.id}...")
+                # Étant donné que tes fonctions de scan (run_malware_scan, scan_site) sont asynchrones,
+                # il faut les lancer proprement depuis ce thread synchrone
+                asyncio.run(scan_site(site.id, db))
+                asyncio.run(run_malware_scan(site.id, db))
+                print(f"✅ [Scheduler] Scan terminé pour le site #{site.id}.")
+
+                # ✨ LA SÉCURITÉ RÉSEAU EST ICI ✨
+                # On force le backend à souffler pendant 5 secondes avant d'attaquer le site suivant
+                time.sleep(5)
+                
+    except Exception as e:
+        print(f"🚨 [Scheduler] Erreur critique : {str(e)}")
+    finally:
+        db.close()
+
+# On attache le planificateur au cycle de vie de FastAPI
+@app.on_event("startup")
+def start_scheduler():
+    # Le planificateur vérifie toutes les 1 heures (hours=1) s'il y a des scans à faire
+    scheduler.add_job(run_automated_scans, IntervalTrigger(hours=1))
+    scheduler.start()
+    print("⏱️ Planificateur de tâches (APScheduler) démarré.")
+
+@app.on_event("shutdown")
+def stop_scheduler():
+    scheduler.shutdown()
+
+
+
+
 
 
 

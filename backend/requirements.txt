@@ -6,3 +6,5 @@ pydantic
 cryptography
 passlib[bcrypt]
 python-jose[cryptography]
+apscheduler
+httpx
