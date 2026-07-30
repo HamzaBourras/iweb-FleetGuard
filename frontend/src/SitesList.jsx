@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye, ChevronLeft, ChevronRight, Radar } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye, ChevronLeft, ChevronRight, Radar, X } from 'lucide-react';
 
 export default function SitesList() {
   const navigate = useNavigate();
@@ -17,6 +17,22 @@ export default function SitesList() {
 
   const [newGeneratedToken, setNewGeneratedToken] = useState(null);
 
+  // --- États pour la modale de suppression ---
+  const [siteToDelete, setSiteToDelete] = useState(null); // Stocke l'ID du site à supprimer
+  const [isDeleting, setIsDeleting] = useState(false); // État de chargement du bouton
+
+  // --- États pour la modale de restauration ---
+  const [siteToRestore, setSiteToRestore] = useState(null); // Stocke l'ID du site à restaurer
+  const [isRestoring, setIsRestoring] = useState(false); // État de chargement du bouton
+
+  // --- ÉTATS POUR LES NOTIFICATIONS TOAST ---
+  const [notification, setNotification] = useState(null);
+
+  const showNotification = (type, message) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 5000); // Disparaît après 5 secondes
+  };
+
   // États pour la pagination
   const [sitePage, setSitePage] = useState(1);
   const sitesPerPage = 10;
@@ -27,11 +43,11 @@ export default function SitesList() {
   );
 
   const fetchSites = async () => {
-    const token = localStorage.getItem('fleetguard_token');
+    
     try {
       const response = await fetch('http://localhost:8000/api/sites', {
         method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       });
       if (!response.ok) throw new Error("Impossible de récupérer la liste des sites.");
       const data = await response.json();
@@ -44,30 +60,67 @@ export default function SitesList() {
     }
   };
 
-  const handleDelete = async (siteId) => {
-    if (!window.confirm("Voulez-vous vraiment supprimer ce site ? Il sera conservé pendant 12h avant destruction définitive.")) return;
-    const token = localStorage.getItem('fleetguard_token');
+  // Ouvre la modale de confirmation de suppression
+  const initiateDelete = (siteId) => {
+    setSiteToDelete(siteId);
+  };
+
+  // Ouvre la modale de confirmation de restauration
+  const initiateRestore = (siteId) => {
+    setSiteToRestore(siteId);
+  };
+
+  // Exécute réellement la suppression après confirmation
+  const confirmDelete = async () => {
+    if (!siteToDelete) return;
+    setIsDeleting(true);
+    
     try {
-      const response = await fetch(`http://localhost:8000/api/sites/${siteId}`, {
+      const response = await fetch(`http://localhost:8000/api/sites/${siteToDelete}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       });
-      if (response.ok) fetchSites();
+      if (response.ok) {
+          await fetchSites();
+          // ✨ NOUVEAU
+          showNotification('success', 'Le site a été placé en corbeille (conservation 12h).');
+      }
+      else {
+        showNotification('error', "Erreur lors de la mise en corbeille du site.");
+      }
     } catch (err) {
-      alert("Erreur lors de la suppression.");
+      // ✨ NOUVEAU
+      showNotification('error', "Erreur lors de la mise en corbeille du site.");
+    } finally {
+      setIsDeleting(false);
+      setSiteToDelete(null); // Ferme la modale
     }
   };
 
-  const handleRestore = async (siteId) => {
-    const token = localStorage.getItem('fleetguard_token');
+  // Exécute réellement la restauration après confirmation
+  const confirmRestore = async () => {
+    if (!siteToRestore) return;
+    setIsRestoring(true);
+    
     try {
-      const response = await fetch(`http://localhost:8000/api/sites/${siteId}/restore`, {
+      const response = await fetch(`http://localhost:8000/api/sites/${siteToRestore}/restore`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       });
-      if (response.ok) fetchSites();
+      if (response.ok) {
+          await fetchSites();
+          // ✨ NOUVEAU
+          showNotification('success', 'La supervision du site a été restaurée.');
+      }
+      else {
+        showNotification('error', "Erreur lors de la restauration du site.");
+      }
     } catch (err) {
-      alert("Erreur lors de la restauration.");
+      // ✨ NOUVEAU
+      showNotification('error', "Erreur lors de la restauration du site.");
+    } finally {
+      setIsRestoring(false);
+      setSiteToRestore(null); // Ferme la modale
     }
   };
 
@@ -78,27 +131,29 @@ export default function SitesList() {
   const handleAddSite = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    const token = localStorage.getItem('fleetguard_token');
-
+    
     try {
       const response = await fetch('http://localhost:8000/api/sites', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ site_name: newSiteName, url: newSiteUrl }),
       });
 
-      if (!response.ok) throw new Error("Erreur lors de l'ajout du site.");
+      if (!response.ok) showNotification('error', 'Erreur lors de l\'ajout du site. Veuillez vérifier les informations et réessayer.');
       const addedSite = await response.json();
 
       fetchSites();
       setNewGeneratedToken(addedSite.secret_token);
       setNewSiteName('');
       setNewSiteUrl('');
+      // ✨ NOUVEAU : Notification de succès
+      showNotification('success', 'Nouveau site ajouté avec succès à la flotte.');
     } catch (err) {
-      alert(err.message);
+      // ✨ NOUVEAU : Remplacement du alert()
+      showNotification('error', 'Erreur lors de l\'ajout du site. Veuillez vérifier les informations et réessayer.');
     } finally {
       setIsSubmitting(false);
     }
@@ -221,7 +276,7 @@ export default function SitesList() {
 
                           {isDeleted ? (
                             <button
-                              onClick={() => handleRestore(site.id)}
+                              onClick={() => initiateRestore(site.id)}
                               className="inline-flex items-center justify-center gap-1.5 bg-white border border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:shadow-sm p-2 md:px-3 md:py-1.5 rounded-lg text-xs font-bold transition-all"
                               title="Restaurer"
                             >
@@ -230,7 +285,7 @@ export default function SitesList() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => handleDelete(site.id)}
+                              onClick={() => initiateDelete(site.id)}
                               className="inline-flex items-center justify-center gap-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 p-2 md:px-3 md:py-1.5 rounded-lg text-xs font-bold transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
                               title="Supprimer"
                             >
@@ -401,6 +456,121 @@ export default function SitesList() {
                 </form>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+
+      {/* ========================================================= */}
+      {/* MODALE DE CONFIRMATION (MISE EN CORBEILLE)                  */}
+      {/* ========================================================= */}
+      {siteToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden scale-100 transition-transform">
+            <div className="p-6 bg-red-50 border-b border-red-100 flex items-start gap-4">
+              <div className="p-3 bg-red-100 text-red-600 rounded-full shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-red-800">Mise en corbeille</h3>
+                <p className="text-red-600 text-sm mt-1">Voulez-vous vraiment désactiver ce site ?</p>
+              </div>
+            </div>
+            <div className="p-6 bg-white">
+              <p className="text-slate-600 text-sm font-medium leading-relaxed">
+                Le site sera placé en corbeille et ne sera plus supervisé. Il sera conservé pendant <strong>12 heures</strong> avant d'être définitivement détruit de la base de données.
+              </p>
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setSiteToDelete(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Suppression...</>
+                ) : (
+                  <><Trash2 className="w-4 h-4" /> Confirmer la suppression</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* TOAST NOTIFICATION (Succès / Erreur)                      */}
+      {/* ========================================================= */}
+      {notification && (
+        <div className="fixed bottom-6 right-6 z-50 transition-all duration-300 transform translate-y-0 opacity-100">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border-l-4 ${notification.type === 'success'
+            ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
+            : 'bg-red-50 border-red-500 text-red-800'
+            }`}>
+            {notification.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : (
+              <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
+            )}
+            <p className="text-sm font-bold pr-4">{notification.message}</p>
+            <button
+              onClick={() => setNotification(null)}
+              className="text-current opacity-50 hover:opacity-100 transition-opacity ml-auto"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+
+      {/* ========================================================= */}
+      {/* MODALE DE CONFIRMATION (RESTAURATION)                       */}
+      {/* ========================================================= */}
+      {siteToRestore && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden scale-100 transition-transform">
+            <div className="p-6 bg-emerald-50 border-b border-emerald-100 flex items-start gap-4">
+              <div className="p-3 bg-emerald-100 text-emerald-600 rounded-full shrink-0">
+                <RefreshCw className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-emerald-800">Restauration</h3>
+                <p className="text-emerald-600 text-sm mt-1">Réactiver la supervision de ce site ?</p>
+              </div>
+            </div>
+            <div className="p-6 bg-white">
+              <p className="text-slate-600 text-sm font-medium leading-relaxed">
+                Ce site sera restauré et sortira de la corbeille. Son score de santé et l'ensemble de ses alertes seront à nouveau pris en compte dans vos métriques globales.
+              </p>
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setSiteToRestore(null)}
+                disabled={isRestoring}
+                className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmRestore}
+                disabled={isRestoring}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                {isRestoring ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Restauration...</>
+                ) : (
+                  <><CheckCircle2 className="w-4 h-4" /> Confirmer la restauration</>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

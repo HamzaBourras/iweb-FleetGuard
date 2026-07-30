@@ -21,6 +21,7 @@ export default function Login() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
 
@@ -31,8 +32,7 @@ export default function Login() {
         throw new Error(data.detail || 'Erreur de connexion');
       }
 
-      // 3. Si c'est un succès, on sauvegarde le Token VIP dans le navigateur
-      localStorage.setItem('fleetguard_token', data.access_token);
+      
       
       // Redirection fluide vers le Dashboard
       navigate('/dashboard', { replace: true });

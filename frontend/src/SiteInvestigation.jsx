@@ -131,12 +131,12 @@ export default function SiteInvestigation() {
 
   // 1. Fonction pour charger les données de l'actif depuis FastAPI
   const fetchSiteInvestigations = async () => {
-    const token = localStorage.getItem('fleetguard_token');
+    
     try {
       // On lance les deux requêtes en parallèle pour gagner du temps
       const [siteRes, alertsRes] = await Promise.all([
-        fetch(`http://localhost:8000/api/sites/${id}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`http://localhost:8000/api/sites/${id}/alerts`, { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch(`http://localhost:8000/api/sites/${id}`, { credentials: 'include' }),
+        fetch(`http://localhost:8000/api/sites/${id}/alerts`, { credentials: 'include' })
       ]);
 
       if (!siteRes.ok) throw new Error("Impossible de récupérer les détails de l'actif.");
@@ -175,10 +175,10 @@ export default function SiteInvestigation() {
   // 🧠 Renseignement sur les menaces : Récupération depuis le proxy sécurisé FastAPI
   useEffect(() => {
     const fetchThreatIntel = async () => {
-      const token = localStorage.getItem('fleetguard_token');
+      
       try {
         const response = await fetch('http://localhost:8000/api/site/threat-intel', {
-          headers: { 'Authorization': `Bearer ${token}` }
+          credentials: 'include'
         });
 
         if (!response.ok) throw new Error("Impossible de récupérer les indicateurs de compromission.");
@@ -217,11 +217,11 @@ export default function SiteInvestigation() {
   // 2. Fonction pour déclencher un scan actif (Active Scanning)
   const handleScan = async () => {
     setIsScanning(true);
-    const token = localStorage.getItem('fleetguard_token');
+    
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/scan`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       });
 
       // Si le code HTTP n'est pas 200 OK, on intercepte l'erreur
@@ -251,12 +251,12 @@ export default function SiteInvestigation() {
   // 3. Fonction pour déclencher le scanner anti-malware
   const handleMalwareScan = async () => {
     setIsScanningMalware(true);
-    const token = localStorage.getItem('fleetguard_token');
+    
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/malware-scan`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` } // Correction: Ajout du token manquant
+        credentials: 'include' // Correction: Ajout du token manquant
       });
 
       // Interception stricte des erreurs
@@ -267,7 +267,7 @@ export default function SiteInvestigation() {
 
       // On récupère les données fraîches pour compter les menaces
       const siteRes = await fetch(`http://localhost:8000/api/sites/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       });
       const siteData = await siteRes.json();
       setSite(siteData);
@@ -319,15 +319,15 @@ export default function SiteInvestigation() {
     setDeletingFile(currentFile);
     setFileToDelete(null); // On ferme la modale immédiatement
 
-    const token = localStorage.getItem('fleetguard_token');
+    
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/delete-file`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
+         credentials: 'include',
         body: JSON.stringify({ file_path: currentFile })
       });
 
@@ -355,13 +355,13 @@ export default function SiteInvestigation() {
     setResolvingAlert(currentAlertId); // Lance l'animation de chargement
     setAlertToResolve(null); // Ferme la modale immédiatement
 
-    const token = localStorage.getItem('fleetguard_token');
+    
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/alerts/${currentAlertId}/resolve`, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${token}`
+          
         }
       });
 
@@ -390,12 +390,11 @@ export default function SiteInvestigation() {
   // 6. Fonction pour la rotation du token (Key Rotation)
   const handleRegenerateToken = async () => {
     setIsResettingToken(true);
-    const token = localStorage.getItem('fleetguard_token');
-
+    
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/regenerate-token`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       });
 
       if (!response.ok) {
@@ -430,15 +429,15 @@ export default function SiteInvestigation() {
     setWhitelistingFile(currentFile); // Lance l'animation de chargement
     setFileToWhitelist(null); // Ferme la modale immédiatement
 
-    const token = localStorage.getItem('fleetguard_token');
+    
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/whitelist-file`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
+         credentials: 'include',
         body: JSON.stringify({ file_path: currentFile })
       });
 
@@ -462,15 +461,15 @@ export default function SiteInvestigation() {
   const confirmToggleAutoScan = async () => {
     setIsTogglingAutoScan(true); // Active le spinner du bouton
     const newValue = !site.auto_scan_enabled;
-    const token = localStorage.getItem('fleetguard_token');
+    
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/settings`, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({ auto_scan_enabled: newValue })
       });
 

@@ -13,9 +13,19 @@ export default function Dashboard() {
   // 📱 ÉTAT POUR LE MENU MOBILE
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const handleLogout = () => {
-    localStorage.removeItem('fleetguard_token');
-    navigate('/login', { replace: true });
+  const handleLogout = async () => {
+    try {
+      // 1. On demande au serveur de détruire le cookie HttpOnly
+      await fetch('http://localhost:8000/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include' // 🛡️ Indispensable pour envoyer le cookie à détruire
+      });
+    } catch (error) {
+      console.error("Erreur réseau lors de la déconnexion :", error);
+    } finally {
+      // 2. Peu importe si le serveur a répondu ou non, on éjecte l'utilisateur côté interface
+      navigate('/login', { replace: true });
+    }
   };
 
   // Fermer le menu mobile lors d'un clic sur un lien

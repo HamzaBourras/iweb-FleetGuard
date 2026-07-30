@@ -30,11 +30,11 @@ export default function SecurityAlerts() {
 
   useEffect(() => {
     const fetchAlerts = async () => {
-      const token = localStorage.getItem('fleetguard_token');
+      
       try {
         const response = await fetch('http://localhost:8000/api/alerts', {
           method: 'GET',
-          headers: { 'Authorization': `Bearer ${token}` }
+          credentials: 'include'
         });
 
         if (!response.ok) throw new Error("Impossible de charger les logs de sécurité.");

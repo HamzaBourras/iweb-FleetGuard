@@ -22,15 +22,15 @@ export default function Overview() {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      const token = localStorage.getItem('fleetguard_token');
+      
       try {
         // ✨ On fetch les stats ET les sites en parallèle
         const [statsRes, sitesRes] = await Promise.all([
           fetch('http://localhost:8000/api/dashboard/stats', {
-            headers: { 'Authorization': `Bearer ${token}` }
+            credentials: 'include'
           }),
           fetch('http://localhost:8000/api/sites', {
-            headers: { 'Authorization': `Bearer ${token}` }
+            credentials: 'include'
           })
         ]);
 

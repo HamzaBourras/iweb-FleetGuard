@@ -1,9 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException, Header, APIRouter
+from fastapi import FastAPI, Request, Depends, HTTPException, Header, APIRouter, Response
+from jose import jwt, JWTError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session, selectinload
 from sqlalchemy.ext.declarative import declarative_base
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer
 import secrets
 from pydantic import BaseModel
 from datetime import datetime, timedelta
@@ -62,8 +62,29 @@ def read_root():
         "message": "Bienvenue sur l'API centrale iweb FleetGuard. Le moteur Python est opérationnel."
     }
 
-# On indique à FastAPI quelle route délivre les tokens
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+# Nouvelle version sécurisée par Cookie
+def get_current_admin(request: Request, db: Session = Depends(get_db)):
+    # 1. On extrait le token du cookie HttpOnly
+    token = request.cookies.get("fleetguard_token")
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Non authentifié (Cookie introuvable)")
+    
+    try:
+        # 2. On utilise ta clé secrète définie dans security.py pour décoder
+        payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise HTTPException(status_code=401, detail="Token invalide")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token expiré ou corrompu")
+        
+    # 3. On vérifie que l'admin existe toujours en BDD
+    admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == email).first()
+    if admin is None:
+        raise HTTPException(status_code=401, detail="Administrateur introuvable")
+        
+    return admin
 
 # --- FONCTION DE RECALCUL DU SCORE DE SANTÉ du site ---
 def recalculate_health_score(site, db: Session):
@@ -182,8 +203,8 @@ def receive_agent_alerts(
 
 
 # --- ROUTES D'AUTHENTIFICATION DU TABLEAU DE BORD ---
-@app.post("/api/auth/login", response_model=schemas.Token)
-def login_admin(credentials: schemas.AdminLogin, db: Session = Depends(get_db)):
+@app.post("/api/auth/login")
+def login_admin(credentials: schemas.AdminLogin, response: Response, db: Session = Depends(get_db)):
     # 1. On cherche l'administrateur par son email
     admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == credentials.email).first()
     
@@ -198,15 +219,48 @@ def login_admin(credentials: schemas.AdminLogin, db: Session = Depends(get_db)):
     access_token = security.create_access_token(
         data={"sub": admin.email, "role": admin.role}
     )
-    
-    return {"access_token": access_token, "token_type": "bearer"}
 
+    # ✨ 4. INJECTION SÉCURISÉE DU COOKIE
+    response.set_cookie(
+        key="fleetguard_token",
+        value=access_token, # ⚠️ On utilise bien ta variable 'access_token' ici
+        httponly=True,  # Interdit l'accès via JavaScript (Anti-XSS)
+        secure=False,   # ⚠️ À passer à True en Production (nécessite HTTPS)
+        samesite="lax", # Anti-CSRF
+        max_age=86400   # Expiration en secondes (24h)
+    )
+    
+    # 5. On renvoie un simple message, le navigateur gère le cookie tout seul
+    return {"message": "Authentification réussie"}
+
+# --- ROUTE DE VÉRIFICATION DE SESSION (POUR LE FRONTEND) ---
+@app.get("/api/auth/verify")
+def verify_session(admin: models.DashboardAdmin = Depends(get_current_admin)):
+    """
+    Sert uniquement au front-end React pour vérifier si le cookie est toujours valide 
+    sans avoir à télécharger de grosses données.
+    """
+    return {"status": "authenticated", "admin_email": admin.email}
+
+# --- ROUTE DE DÉCONNEXION (SUPPRESSION DU COOKIE) ---
+@app.post("/api/auth/logout")
+def logout_admin(response: Response, admin: models.DashboardAdmin = Depends(get_current_admin)):
+    """
+    Détruit la session en demandant au navigateur de supprimer le cookie.
+    """
+    response.delete_cookie(
+        key="fleetguard_token",
+        httponly=True,
+        secure=False, # ⚠️ À passer à True en production
+        samesite="lax"
+    )
+    return {"message": "Déconnexion réussie et cookie détruit."}
 
 # --- ROUTES DU TABLEAU DE BORD (PROTÉGÉES) ---
 
 @app.get("/api/dashboard/stats")
 def get_dashboard_stats(
-    token: str = Depends(oauth2_scheme),
+    admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     total_sites = db.query(models.ClientSite).count()
@@ -247,7 +301,7 @@ def get_dashboard_stats(
 # --- 1. MODIFICATION DE LA ROUTE EXISTANTE : GET /api/sites ---
 @app.get("/api/sites")
 def get_all_sites(
-    token: str = Depends(oauth2_scheme), 
+    admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
     # 1. NETTOYAGE AUTOMATIQUE : Suppression des sites en attente depuis plus de 12h
@@ -284,7 +338,7 @@ class SiteCreate(BaseModel):
 @app.delete("/api/sites/{site_id}")
 def soft_delete_site(
     site_id: int, 
-    token: str = Depends(oauth2_scheme), 
+    admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
     site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
@@ -301,7 +355,7 @@ def soft_delete_site(
 @app.put("/api/sites/{site_id}/restore")
 def restore_site(
     site_id: int, 
-    token: str = Depends(oauth2_scheme), 
+    admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
     site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
@@ -318,7 +372,7 @@ def restore_site(
 @app.post("/api/sites")
 def create_site(
     site_data: SiteCreate,
-    token: str = Depends(oauth2_scheme),
+    admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     # 1. Génération du token en clair (celui qu'on va montrer à l'admin)
@@ -354,7 +408,7 @@ def create_site(
 def get_site_alerts(
     site_id: int, 
     limit: int = 10,
-    token: str = Depends(oauth2_scheme), 
+    admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
     # On récupère les X dernières alertes de ce site spécifique, de la plus récente à la plus ancienne
@@ -371,7 +425,7 @@ def get_site_alerts(
 @app.get("/api/alerts")
 def get_all_alerts(
     db: Session = Depends(get_db), 
-    token: str = Depends(oauth2_scheme)
+    admin: models.DashboardAdmin = Depends(get_current_admin)
 ):
     # On fait une jointure entre SecurityAlert et ClientSite
     alerts_query = db.query(
@@ -436,7 +490,7 @@ async def resolve_security_alert(
 @app.get("/api/sites/{site_id}")
 def get_single_site(
     site_id: int, 
-    token: str = Depends(oauth2_scheme), 
+    admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
     # 1. Chercher le site ciblé dans la base de données
@@ -481,7 +535,6 @@ def get_single_site(
 async def scan_site(
     site_id: int, 
     db: Session = Depends(get_db), 
-    # current_user: models.User = Depends(get_current_user)
 ):
     # 1. Vérifier que le site existe dans la base de données
     site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
@@ -524,7 +577,7 @@ async def scan_site(
     except httpx.ConnectTimeout:
         raise HTTPException(status_code=504, detail="Délai d'attente dépassé : Le site cible ne répond pas.")
     except httpx.RequestError as exc:
-        raise HTTPException(status_code=503, detail=f"Erreur de communication avec la cible : {str(exc)}")
+        raise HTTPException(status_code=503, detail=f"Erreur de communication avec la cible")
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=exc.response.status_code, detail="La sonde PHP a retourné une erreur inattendue.")
 
@@ -570,7 +623,7 @@ THREAT_INTEL_CACHE = {
 CACHE_DURATION = 3600 * 12 # 12 heures en secondes
 
 @app.get("/api/site/threat-intel")
-async def get_threat_intelligence(token: str = Depends(oauth2_scheme)):
+async def get_threat_intelligence(admin: models.DashboardAdmin = Depends(get_current_admin)):
     """
     Récupère les dernières versions sécurisées de WP et PHP.
     Agit comme un proxy pour isoler le front-end d'Internet.
@@ -679,6 +732,12 @@ async def run_malware_scan(
         }
 
     # --- LE FILET DE SÉCURITÉ ---
+    except httpx.ConnectTimeout:
+        raise HTTPException(status_code=504, detail="Délai d'attente dépassé : Le site cible ne répond pas.")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"Erreur de communication avec la cible")
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail="La sonde PHP a retourné une erreur inattendue.")
     except HTTPException:
         raise 
     except Exception as e:
@@ -758,7 +817,7 @@ async def delete_malicious_file(
 @app.post("/api/sites/{site_id}/regenerate-token")
 def regenerate_site_token(
     site_id: int, 
-    token: str = Depends(oauth2_scheme), 
+    admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
     """
@@ -803,7 +862,7 @@ from sqlalchemy.orm.attributes import flag_modified
 def whitelist_site_file(
     site_id: int,
     payload: FileActionRequest,
-    token: str = Depends(oauth2_scheme),
+    admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
@@ -857,7 +916,7 @@ def whitelist_site_file(
 def update_site_settings(
     site_id: int,
     settings: schemas.SiteSettingsUpdate,
-    token: str = Depends(oauth2_scheme),
+    admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """Met à jour la configuration (ex: Auto-scan) d'un site."""
