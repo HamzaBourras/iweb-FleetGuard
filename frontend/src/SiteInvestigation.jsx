@@ -77,6 +77,10 @@ export default function SiteInvestigation() {
   const [alertToResolve, setAlertToResolve] = useState(null); // Contient l'objet alerte si la modale est ouverte
   const [resolvingAlert, setResolvingAlert] = useState(null); // ID de l'alerte en cours d'archivage
 
+  // --- ÉTATS POUR L'UX DU SCAN AUTOMATIQUE ---
+  const [showAutoScanModal, setShowAutoScanModal] = useState(false);
+  const [isTogglingAutoScan, setIsTogglingAutoScan] = useState(false);
+
   // --- LOGIQUE DE DÉCOUPAGE (PLUGINS) ---
   const plugins = site?.plugins_inventory || [];
   const pluginsPerPage = 6;
@@ -453,13 +457,12 @@ export default function SiteInvestigation() {
     }
   };
 
-  // 8. Fonction pour basculer le scan automatique
-  const toggleAutoScan = async () => {
+
+  // 8. Fonction pour valider et exécuter le basculement du scan automatique
+  const confirmToggleAutoScan = async () => {
+    setIsTogglingAutoScan(true); // Active le spinner du bouton
     const newValue = !site.auto_scan_enabled;
     const token = localStorage.getItem('fleetguard_token');
-
-    // Mise à jour optimiste de l'UI (pour que le bouton réagisse instantanément)
-    setSite({ ...site, auto_scan_enabled: newValue });
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/settings`, {
@@ -473,11 +476,16 @@ export default function SiteInvestigation() {
 
       if (!response.ok) throw new Error();
 
+      // Mise à jour de l'UI et fermeture de la modale
+      setSite({ ...site, auto_scan_enabled: newValue });
       showNotification('success', `Scan automatique ${newValue ? 'activé (Toutes les 24h)' : 'désactivé'}.`);
+      setShowAutoScanModal(false); 
+      
     } catch (err) {
-      // En cas d'erreur, on annule le changement visuel
-      setSite({ ...site, auto_scan_enabled: !newValue });
       showNotification('error', "Impossible de modifier la configuration.");
+      setShowAutoScanModal(false);
+    } finally {
+      setIsTogglingAutoScan(false);
     }
   };
 
@@ -599,7 +607,7 @@ export default function SiteInvestigation() {
               <span className="text-[10px] text-slate-500 font-medium">Anti-Malware & SBOM</span>
             </div>
             <button
-              onClick={toggleAutoScan}
+              onClick={() => setShowAutoScanModal(true)}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${site?.auto_scan_enabled ? 'bg-emerald-500' : 'bg-slate-300'
                 }`}
             >
@@ -1418,6 +1426,61 @@ export default function SiteInvestigation() {
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2"
               >
                 <ShieldCheck className="w-4 h-4" /> Confirmer comme sain
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODALE DE CONFIRMATION (SCAN AUTOMATIQUE)                 */}
+      {/* ========================================================= */}
+      {showAutoScanModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden scale-100 transition-transform">
+            
+            <div className={`p-6 border-b flex items-start gap-4 ${!site?.auto_scan_enabled ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
+              <div className={`p-3 rounded-full shrink-0 ${!site?.auto_scan_enabled ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                {!site?.auto_scan_enabled ? <CheckCircle2 className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
+              </div>
+              <div>
+                <h3 className={`text-xl font-black ${!site?.auto_scan_enabled ? 'text-emerald-800' : 'text-amber-800'}`}>
+                  {!site?.auto_scan_enabled ? 'Activer la surveillance' : 'Désactiver la surveillance'}
+                </h3>
+                <p className={`text-sm mt-1 ${!site?.auto_scan_enabled ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  Modification de la politique de sécurité de l'actif.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 bg-white">
+              <p className="text-slate-600 text-sm font-medium leading-relaxed">
+                {!site?.auto_scan_enabled
+                  ? "En confirmant, le moteur FleetGuard planifiera automatiquement une analyse heuristique des fichiers et un audit d'infrastructure complet toutes les 24 heures en tâche de fond."
+                  : "En désactivant cette option, vous devrez relancer les analyses anti-malware manuellement pour rafraîchir le score de santé et détecter de nouvelles compromissions."}
+              </p>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setShowAutoScanModal(false)}
+                disabled={isTogglingAutoScan}
+                className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmToggleAutoScan}
+                disabled={isTogglingAutoScan}
+                className={`px-4 py-2 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2 ${
+                  !site?.auto_scan_enabled ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {isTogglingAutoScan ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Traitement...</>
+                ) : (
+                  <><Activity className="w-4 h-4" /> Confirmer le changement</>
+                )}
               </button>
             </div>
           </div>
