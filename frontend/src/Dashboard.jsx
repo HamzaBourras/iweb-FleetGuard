@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Globe, ShieldAlert, LogOut, Menu, X, BookOpen } from 'lucide-react';
+import { LayoutDashboard, Globe, ShieldAlert, LogOut, Menu, X, BookOpen, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import logoImg from './assets/logo-dark.png';
+import MfaSetupModal from './MfaSetupModal';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -12,6 +13,14 @@ export default function Dashboard() {
 
   // 📱 ÉTAT POUR LE MENU MOBILE
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // ✨ ÉTATS POUR LE MFA ET LES NOTIFICATIONS
+  const [showMfaModal, setShowMfaModal] = useState(false);
+  const [notification, setNotification] = useState(null);
+  const showNotification = (type, message) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 5000);
+  };
 
   const handleLogout = async () => {
     try {
@@ -140,8 +149,17 @@ export default function Dashboard() {
           </nav>
         </div>
 
-        {/* Bouton de déconnexion animé */}
         <div className="relative z-10">
+          {/* Bouton Configuration MFA */}
+          <button
+            onClick={() => setShowMfaModal(true)}
+            className="cursor-pointer group w-full bg-slate-800/50 hover:bg-indigo-500/10 border border-slate-600 hover:border-indigo-500/30 text-slate-300 hover:text-indigo-400 font-bold py-3 px-4 rounded-xl transition-all duration-300 ease-out flex items-center justify-center gap-2"
+          >
+            <ShieldCheck className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+            <span>Sécurité (MFA)</span>
+          </button>
+
+          {/* Bouton de déconnexion animé */}
           <button
             onClick={handleLogout}
             className="cursor-pointer group w-full bg-slate-800/50 hover:bg-red-500/10 border border-slate-600 hover:border-red-500/30 text-slate-300 hover:text-red-500 font-bold py-3 px-4 rounded-xl transition-all duration-300 ease-out flex items-center justify-center gap-2 mt-4"
@@ -189,6 +207,41 @@ export default function Dashboard() {
         </main>
       </div>
 
+
+      {/* 🛡️ MODALE DE CONFIGURATION MFA */}
+      {showMfaModal && (
+        <MfaSetupModal 
+          onClose={() => setShowMfaModal(false)} 
+          showNotification={showNotification}
+        />
+      )}
+
+      {/* 🔔 TOAST NOTIFICATION (Succès / Erreur) */}
+      {notification && (
+        <div className="fixed bottom-6 right-6 z-50 transition-all duration-300 transform translate-y-0 opacity-100">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border-l-4 ${notification.type === 'success'
+            ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
+            : 'bg-red-50 border-red-500 text-red-800'
+            }`}>
+            {notification.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : (
+              <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
+            )}
+            <p className="text-sm font-bold pr-4">{notification.message}</p>
+            <button
+              onClick={() => setNotification(null)}
+              className="text-current opacity-50 hover:opacity-100 transition-opacity ml-auto"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+
+
+

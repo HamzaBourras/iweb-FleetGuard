@@ -34,7 +34,11 @@ class AgentPayload(BaseModel):
 class AdminLogin(BaseModel):
     email: str
     password: str
+    mfa_code: Optional[str] = None # Optionnel car le frontend ne l'envoie pas au premier clic
 
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class MfaEnableRequest(BaseModel):
+    code: str

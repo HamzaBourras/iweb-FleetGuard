@@ -108,3 +108,7 @@ class DashboardAdmin(Base):
     is_active = Column(Integer, default=1) 
     
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # ✨ NOUVELLES COLONNES POUR LE MFA ✨
+    mfa_secret = Column(String(32), nullable=True) # Clé secrète générée par pyotp
+    mfa_enabled = Column(Boolean, default=False)   # Indique si le MFA est actif

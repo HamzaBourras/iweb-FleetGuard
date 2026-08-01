@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import httpx
 import time
 from pydantic import BaseModel
+import pyotp
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -204,7 +205,11 @@ def receive_agent_alerts(
 
 # --- ROUTES D'AUTHENTIFICATION DU TABLEAU DE BORD ---
 @app.post("/api/auth/login")
-def login_admin(credentials: schemas.AdminLogin, response: Response, db: Session = Depends(get_db)):
+def login_admin(
+    credentials: schemas.AdminLogin, 
+    response: Response, 
+    db: Session = Depends(get_db)
+):
     # 1. On cherche l'administrateur par son email
     admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == credentials.email).first()
     
@@ -215,24 +220,36 @@ def login_admin(credentials: schemas.AdminLogin, response: Response, db: Session
     if admin.is_active == 0:
         raise HTTPException(status_code=403, detail="Ce compte a été désactivé")
 
-    # 3. On génère le badge d'accès JWT
+    # ✨ 3. VERROU MFA (MULTI-FACTOR AUTHENTICATION) ✨
+    if admin.mfa_enabled:
+        # Si le MFA est activé mais que le frontend n'a pas envoyé de code
+        if not credentials.mfa_code:
+            # On renvoie une erreur spécifique pour dire au frontend d'afficher le champ MFA
+            raise HTTPException(status_code=403, detail="MFA_REQUIRED")
+        
+        # Si un code a été envoyé, on le vérifie cryptographiquement
+        totp = pyotp.TOTP(admin.mfa_secret)
+        if not totp.verify(credentials.mfa_code):
+            raise HTTPException(status_code=401, detail="Code de double authentification invalide ou expiré")
+
+    # 4. Si tout est bon (ou si le MFA n'est pas activé), on génère le JWT
     access_token = security.create_access_token(
         data={"sub": admin.email, "role": admin.role}
     )
 
-    # ✨ 4. INJECTION SÉCURISÉE DU COOKIE
+    # 5. INJECTION SÉCURISÉE DU COOKIE HTTPONLY
     response.set_cookie(
         key="fleetguard_token",
-        value=access_token, # ⚠️ On utilise bien ta variable 'access_token' ici
-        httponly=True,  # Interdit l'accès via JavaScript (Anti-XSS)
-        secure=False,   # ⚠️ À passer à True en Production (nécessite HTTPS)
-        samesite="lax", # Anti-CSRF
-        max_age=86400   # Expiration en secondes (24h)
+        value=access_token, 
+        httponly=True,  
+        secure=False,   # ⚠️ À passer à True en Production (HTTPS)
+        samesite="lax", 
+        max_age=86400   
     )
     
-    # 5. On renvoie un simple message, le navigateur gère le cookie tout seul
     return {"message": "Authentification réussie"}
 
+    
 # --- ROUTE DE VÉRIFICATION DE SESSION (POUR LE FRONTEND) ---
 @app.get("/api/auth/verify")
 def verify_session(admin: models.DashboardAdmin = Depends(get_current_admin)):
@@ -241,6 +258,66 @@ def verify_session(admin: models.DashboardAdmin = Depends(get_current_admin)):
     sans avoir à télécharger de grosses données.
     """
     return {"status": "authenticated", "admin_email": admin.email}
+
+# --- ROUTE 1 : GÉNÉRATION DU SECRET ET DU QR CODE ---
+@app.get("/api/auth/mfa/setup")
+def setup_mfa(
+    admin: models.DashboardAdmin = Depends(get_current_admin), 
+    db: Session = Depends(get_db)
+):
+    """
+    Génère un nouveau secret TOTP pour l'administrateur.
+    Retourne l'URI de provisionnement pour générer le QR Code côté frontend.
+    """
+    # 1. On génère une clé secrète aléatoire en Base32
+    secret = pyotp.random_base32()
+    
+    # 2. On sauvegarde ce secret dans la base de données
+    # IMPORTANT : On laisse mfa_enabled à False tant qu'il n'a pas validé son premier code
+    admin.mfa_secret = secret
+    admin.mfa_enabled = False
+    db.commit()
+    
+    # 3. On crée l'URL compatible avec Google Authenticator / Authy / Microsoft Authenticator
+    totp = pyotp.TOTP(secret)
+    provisioning_uri = totp.provisioning_uri(
+        name=admin.email, 
+        issuer_name="FleetGuard SOC" # C'est le nom qui s'affichera dans l'application mobile
+    )
+    
+    return {
+        "secret": secret, # Optionnel : à afficher si la caméra du téléphone est cassée
+        "qr_uri": provisioning_uri # À transformer en QR Code côté React
+    }
+
+# --- ROUTE 2 : VALIDATION ET ACTIVATION DÉFINITIVE ---
+@app.post("/api/auth/mfa/enable")
+def enable_mfa(
+    payload: schemas.MfaEnableRequest, 
+    admin: models.DashboardAdmin = Depends(get_current_admin), 
+    db: Session = Depends(get_db)
+):
+    """
+    Vérifie le premier code à 6 chiffres tapé par l'admin.
+    Si le code est bon, on verrouille l'activation en BDD.
+    """
+    if not admin.mfa_secret:
+        raise HTTPException(status_code=400, detail="Veuillez d'abord initialiser la configuration MFA.")
+
+    # 1. On initialise le comparateur TOTP avec le secret enregistré en BDD
+    totp = pyotp.TOTP(admin.mfa_secret)
+    
+    # 2. On vérifie si le code à 6 chiffres envoyé correspond au code actuel
+    # verify() tolère un léger décalage temporel classique
+    if not totp.verify(payload.code):
+        raise HTTPException(status_code=400, detail="Code MFA invalide ou expiré.")
+
+    # 3. Si c'est bon, on active officiellement le MFA pour ce compte !
+    admin.mfa_enabled = True
+    db.commit()
+
+    return {"message": "Authentification multifacteur (MFA) activée avec succès !"}
+
 
 # --- ROUTE DE DÉCONNEXION (SUPPRESSION DU COOKIE) ---
 @app.post("/api/auth/logout")
@@ -1001,28 +1078,26 @@ def stop_scheduler():
 
 
 
-
-
 # --- HACK TEMPORAIRE POUR INJECTER LE PREMIER ADMINISTRATEUR ---
-@app.get("/setup-admin")
-def setup_first_admin(db: Session = Depends(get_db)):
-    # Vérifie si le compte existe déjà pour éviter les doublons
-    admin_existe = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == "admin@iweb.com").first()
-    if admin_existe:
-        return {"message": "Le compte admin@iweb.com existe déjà !"}
+# @app.get("/setup-admin")
+# def setup_first_admin(db: Session = Depends(get_db)):
+#     # Vérifie si le compte existe déjà pour éviter les doublons
+#     admin_existe = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == "admin@iweb.com").first()
+#     if admin_existe:
+#         return {"message": "Le compte admin@iweb.com existe déjà !"}
     
-    # Hachage sécurisé du mot de passe
-    mot_de_passe_hache = security.get_password_hash("SuperAdmin2026!")
+#     # Hachage sécurisé du mot de passe
+#     mot_de_passe_hache = security.get_password_hash("SuperAdmin2026!")
     
-    nouveau_admin = models.DashboardAdmin(
-        email="admin@iweb.com",
-        hashed_password=mot_de_passe_hache,
-        role="superadmin"
-    )
-    db.add(nouveau_admin)
-    db.commit()
+#     nouveau_admin = models.DashboardAdmin(
+#         email="admin@iweb.com",
+#         hashed_password=mot_de_passe_hache,
+#         role="superadmin"
+#     )
+#     db.add(nouveau_admin)
+#     db.commit()
     
-    return {"message": "Compte administrateur créé avec succès : admin@iweb.com / SuperAdmin2026!"}
+#     return {"message": "Compte administrateur créé avec succès : admin@iweb.com / SuperAdmin2026!"}
 
 # --- HACK TEMPORAIRE POUR INJECTER UN SITE DE TEST ---
 # Correction de "SessionLocal" en "Session"
