@@ -42,3 +42,10 @@ class Token(BaseModel):
 
 class MfaEnableRequest(BaseModel):
     code: str
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+class RecoveryCodesRequest(BaseModel):
+    password: str

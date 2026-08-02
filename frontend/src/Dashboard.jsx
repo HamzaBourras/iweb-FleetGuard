@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Globe, ShieldAlert, LogOut, Menu, X, BookOpen, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { LayoutDashboard, Globe, ShieldAlert, LogOut, Menu, X, BookOpen, ShieldCheck, CheckCircle2, ChevronDown, User } from 'lucide-react';
 import logoImg from './assets/logo-dark.png';
-import MfaSetupModal from './MfaSetupModal';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -14,13 +13,31 @@ export default function Dashboard() {
   // 📱 ÉTAT POUR LE MENU MOBILE
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // ✨ ÉTATS POUR LE MFA ET LES NOTIFICATIONS
-  const [showMfaModal, setShowMfaModal] = useState(false);
-  const [notification, setNotification] = useState(null);
-  const showNotification = (type, message) => {
-    setNotification({ type, message });
-    setTimeout(() => setNotification(null), 5000);
-  };
+  // ÉTAT POUR LE MENU DÉROULANT DU PROFIL
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+
+  // Nouveaux états pour la bannière MFA
+  const [mfaEnabled, setMfaEnabled] = useState(null); // null = chargement, true/false = état réel
+  const [dismissMfaAlert, setDismissMfaAlert] = useState(false); // Pour fermer la bannière
+
+  // Vérification de la session et du statut MFA au montage du Dashboard
+  useEffect(() => {
+    const verifyDashboardSession = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/auth/verify', {
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setMfaEnabled(data.mfa_enabled);
+        }
+      } catch (err) {
+        console.error("Erreur de vérification de session :", err);
+      }
+    };
+
+    verifyDashboardSession();
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -149,95 +166,127 @@ export default function Dashboard() {
           </nav>
         </div>
 
-        <div className="relative z-10">
-          {/* Bouton Configuration MFA */}
-          <button
-            onClick={() => setShowMfaModal(true)}
-            className="cursor-pointer group w-full bg-slate-800/50 hover:bg-indigo-500/10 border border-slate-600 hover:border-indigo-500/30 text-slate-300 hover:text-indigo-400 font-bold py-3 px-4 rounded-xl transition-all duration-300 ease-out flex items-center justify-center gap-2"
-          >
-            <ShieldCheck className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-            <span>Sécurité (MFA)</span>
-          </button>
-
-          {/* Bouton de déconnexion animé */}
-          <button
-            onClick={handleLogout}
-            className="cursor-pointer group w-full bg-slate-800/50 hover:bg-red-500/10 border border-slate-600 hover:border-red-500/30 text-slate-300 hover:text-red-500 font-bold py-3 px-4 rounded-xl transition-all duration-300 ease-out flex items-center justify-center gap-2 mt-4"
-          >
-            <LogOut className="w-5 h-5 group-hover:-translate-x-1 transition-transform duration-300" />
-            <span>Déconnexion</span>
-          </button>
+        <div className="relative z-10 mt-auto pt-4 border-t border-slate-800/50">
+          <p className="text-center text-xs text-slate-500 font-medium">
+            FleetGuard SOC v1.0
+          </p>
         </div>
       </aside>
 
       {/* 🖥️ ZONE DE CONTENU PRINCIPALE */}
       <div className="flex-1 flex flex-col overflow-hidden relative w-full">
 
-        {/* HEADER DYNAMIQUE */}
-        <header className="bg-white/80 backdrop-blur-md shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] h-[72px] flex items-center justify-between px-4 md:px-8 border-b border-slate-200 shrink-0 z-10">
-          <div className="flex items-center gap-3">
-            {/* Bouton Hamburger Mobile */}
+        {/* ========================================================= */}
+        {/* BANNIÈRE D'ALERTE MFA PERSISTANTE                         */}
+        {/* ========================================================= */}
+        {mfaEnabled === false && !dismissMfaAlert && (
+          <div className="bg-amber-500 text-white px-4 py-3 flex items-center justify-between shrink-0 z-20 shadow-md animate-fade-in">
+            <div className="flex items-center gap-3">
+              <ShieldAlert className="w-5 h-5 text-amber-100 shrink-0" />
+              <p className="text-sm font-medium leading-tight">
+                <strong className="font-black">Alerte de sécurité :</strong> L'authentification multifacteur (MFA) n'est pas activée. Votre compte est vulnérable.
+                <button
+                  onClick={() => navigate('/dashboard/profile')}
+                  className="ml-2 font-bold underline decoration-amber-300 hover:text-amber-100 transition-colors"
+                >
+                  Sécuriser mon compte maintenant
+                </button>
+              </p>
+            </div>
             <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none"
+              onClick={() => setDismissMfaAlert(true)}
+              className="p-1.5 hover:bg-amber-600 rounded-lg transition-colors ml-4 shrink-0"
+              title="Fermer l'alerte"
             >
-              <Menu className="w-6 h-6" />
+              <X className="w-5 h-5" />
             </button>
-
-            {/* Le titre dynamique est injecté ici */}
-            <h2 className="text-lg md:text-xl font-bold text-slate-800 tracking-tight transition-all duration-300 truncate max-w-[150px] sm:max-w-none">
-              {getPageTitle()}
-            </h2>
           </div>
+        )}
 
-          <div className="flex items-center gap-2 md:gap-3 bg-emerald-50 px-2.5 py-1.5 md:px-3 rounded-full border border-emerald-100 shrink-0">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </span>
-            <span className="text-[10px] md:text-xs font-bold tracking-wide text-emerald-700 uppercase hidden sm:inline-block">
-              Session Active
-            </span>
-          </div>
-        </header>
+          {/* HEADER DYNAMIQUE */}
+          <header className="bg-white/80 backdrop-blur-md shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] h-[72px] flex items-center justify-between px-4 md:px-8 border-b border-slate-200 shrink-0 z-10">
+            <div className="flex items-center gap-3">
+              {/* Bouton Hamburger Mobile */}
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
 
-        {/* CORPS DE LA PAGE */}
-        <main className="p-4 md:p-8 flex-1 overflow-y-auto bg-slate-50/50">
-          <Outlet context={{ setDynamicSiteName }} />
-        </main>
+              {/* Le titre dynamique est injecté ici */}
+              <h2 className="text-lg md:text-xl font-bold text-slate-800 tracking-tight transition-all duration-300 truncate max-w-[150px] sm:max-w-none">
+                {getPageTitle()}
+              </h2>
+            </div>
+
+            {/* ✨ NOUVEAU MENU DROIT (BADGE + PROFIL) ✨ */}
+            <div className="flex items-center gap-4">
+
+              <div className="hidden sm:flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                <span className="text-xs font-bold tracking-wide text-emerald-700 uppercase">
+                  Session Active
+                </span>
+              </div>
+
+              {/* DROPDOWN PROFIL */}
+              <div className="relative">
+                <button
+                  onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                  className="flex items-center gap-2 p-1 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none"
+                >
+                  <div className="w-9 h-9 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold shadow-sm">
+                    A
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-slate-500 hidden md:block" />
+                </button>
+
+                {isProfileMenuOpen && (
+                  <>
+                    {/* Overlay invisible pour fermer le menu si on clique en dehors */}
+                    <div className="fixed inset-0 z-40" onClick={() => setIsProfileMenuOpen(false)}></div>
+
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50 animate-fade-in origin-top-right">
+                      <button
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          navigate('/dashboard/profile');
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors"
+                      >
+                        <User className="w-4 h-4 text-slate-400" />
+                        Mon Profil
+                      </button>
+
+                      <hr className="my-1 border-slate-100" />
+
+                      <button
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          handleLogout();
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4 text-red-400" />
+                        Déconnexion
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+            </div>
+          </header>
+
+          {/* CORPS DE LA PAGE */}
+          <main className="p-4 md:p-8 flex-1 overflow-y-auto bg-slate-50/50">
+            <Outlet context={{ setDynamicSiteName }} />
+          </main>
       </div>
-
-
-      {/* 🛡️ MODALE DE CONFIGURATION MFA */}
-      {showMfaModal && (
-        <MfaSetupModal 
-          onClose={() => setShowMfaModal(false)} 
-          showNotification={showNotification}
-        />
-      )}
-
-      {/* 🔔 TOAST NOTIFICATION (Succès / Erreur) */}
-      {notification && (
-        <div className="fixed bottom-6 right-6 z-50 transition-all duration-300 transform translate-y-0 opacity-100">
-          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border-l-4 ${notification.type === 'success'
-            ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
-            : 'bg-red-50 border-red-500 text-red-800'
-            }`}>
-            {notification.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            ) : (
-              <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
-            )}
-            <p className="text-sm font-bold pr-4">{notification.message}</p>
-            <button
-              onClick={() => setNotification(null)}
-              className="text-current opacity-50 hover:opacity-100 transition-opacity ml-auto"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
 
     </div>
   );

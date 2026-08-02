@@ -2,9 +2,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './Login';
 import Dashboard from './Dashboard';
 import ProtectedRoute from './ProtectedRoute';
-import PublicRoute from './PublicRoute'; // <-- 1. Nouvelle importation
+import PublicRoute from './PublicRoute'; 
 import Guide from './Guide';
 import SiteInvestigation from './SiteInvestigation';
+import Profile from './Profile';
 
 // Importation de nos nouvelles vues
 import Overview from './Overview';
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="alerts" element={<SecurityAlerts />} />
           {/* ✨ 2. On ajoute la route pour le guide */}
           <Route path="guide" element={<Guide />} />
+          <Route path="profile" element={<Profile />} />
         </Route>
 
         {/* Redirection automatique par défaut */}

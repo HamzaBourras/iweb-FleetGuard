@@ -279,7 +279,11 @@ def verify_session(admin: models.DashboardAdmin = Depends(get_current_admin)):
     Sert uniquement au front-end React pour vérifier si le cookie est toujours valide 
     sans avoir à télécharger de grosses données.
     """
-    return {"status": "authenticated", "admin_email": admin.email}
+    return {
+        "status": "authenticated", 
+        "admin_email": admin.email,
+        "mfa_enabled": admin.mfa_enabled  # ✨ Le frontend saura immédiatement si le compte est protégé
+    }
 
 # --- ROUTE 1 : GÉNÉRATION DU SECRET ET DU QR CODE ---
 @app.get("/api/auth/mfa/setup")
@@ -342,7 +346,7 @@ def enable_mfa(
     hashed_codes = [security.get_password_hash(code) for code in plain_recovery_codes]
     
     # 4. Enregistrement en base de données
-    admin.mfa_enabled = True
+    admin.mfa_enabled = 1
     admin.mfa_recovery_codes = json.dumps(hashed_codes) # On stocke la liste sous forme de chaîne JSON
     db.commit()
 
@@ -352,6 +356,38 @@ def enable_mfa(
         "message": "Authentification multifacteur (MFA) activée avec succès !",
         "recovery_codes": plain_recovery_codes 
     }
+
+
+# --- ROUTE DE REGENERATION DES CODES DE SECOURS ---
+@app.post("/api/auth/mfa/regenerate-recovery-codes")
+def regenerate_recovery_codes(
+    payload: schemas.RecoveryCodesRequest,
+    admin: models.DashboardAdmin = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    
+    # 1. Vérification de l'identité
+    if not security.verify_password(payload.password, admin.hashed_password):
+        raise HTTPException(status_code=400, detail="Mot de passe incorrect.")
+    
+    # 2. Génération de 10 nouveaux codes
+    plain_codes = [
+        f"{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}".upper() 
+        for _ in range(10)
+    ]
+    
+    # 3. Hachage et enregistrement (écrase les anciens)
+    hashed_codes = [security.get_password_hash(code) for code in plain_codes]
+    admin.mfa_recovery_codes = json.dumps(hashed_codes)
+    db.commit()
+    
+    # 4. Envoi de la version en clair pour affichage unique
+    return {
+        "message": "Nouveaux codes générés avec succès.",
+        "recovery_codes": plain_codes
+    }
+
+
 
 # --- ROUTE DE DÉCONNEXION (SUPPRESSION DU COOKIE) ---
 @app.post("/api/auth/logout")
@@ -366,6 +402,27 @@ def logout_admin(response: Response, admin: models.DashboardAdmin = Depends(get_
         samesite="lax"
     )
     return {"message": "Déconnexion réussie et cookie détruit."}
+
+# --- ROUTE DE CHANGEMENT DE MOT DE PASSE ---
+@app.post("/api/auth/change-password")
+def change_password(
+    payload: schemas.PasswordChangeRequest,
+    admin: models.DashboardAdmin = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    # 1. Vérifier si l'ancien mot de passe tapé correspond bien au hachage en BDD
+    if not security.verify_password(payload.current_password, admin.hashed_password):
+        raise HTTPException(status_code=400, detail="Le mot de passe actuel est incorrect.")
+    
+    # 2. Sécurité supplémentaire : vérifier que le nouveau n'est pas identique à l'ancien
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit être différent de l'ancien.")
+
+    # 3. Hacher le nouveau mot de passe et l'enregistrer
+    admin.hashed_password = security.get_password_hash(payload.new_password)
+    db.commit()
+
+    return {"message": "Votre mot de passe a été modifié avec succès."}
 
 # --- ROUTES DU TABLEAU DE BORD (PROTÉGÉES) ---
 
