@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker, Session, selectinload
 from sqlalchemy.ext.declarative import declarative_base
 from fastapi.middleware.cors import CORSMiddleware
 import secrets
+import json
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import httpx
@@ -222,15 +223,37 @@ def login_admin(
 
     # ✨ 3. VERROU MFA (MULTI-FACTOR AUTHENTICATION) ✨
     if admin.mfa_enabled:
-        # Si le MFA est activé mais que le frontend n'a pas envoyé de code
         if not credentials.mfa_code:
-            # On renvoie une erreur spécifique pour dire au frontend d'afficher le champ MFA
             raise HTTPException(status_code=403, detail="MFA_REQUIRED")
         
-        # Si un code a été envoyé, on le vérifie cryptographiquement
+        mfa_input = credentials.mfa_code.strip().upper() # On nettoie et on met en majuscules
+        
+        # A. On vérifie d'abord si c'est un code TOTP classique (Application)
         totp = pyotp.TOTP(admin.mfa_secret)
-        if not totp.verify(credentials.mfa_code):
-            raise HTTPException(status_code=401, detail="Code de double authentification invalide ou expiré")
+        is_valid_totp = totp.verify(mfa_input)
+        is_valid_recovery = False
+
+        # B. Si le TOTP échoue, on vérifie si c'est un code de secours
+        if not is_valid_totp and admin.mfa_recovery_codes:
+            import json
+            try:
+                hashed_codes = json.loads(admin.mfa_recovery_codes)
+            except json.JSONDecodeError:
+                hashed_codes = []
+                
+            for idx, hashed_code in enumerate(hashed_codes):
+                # On compare le code saisi avec le hachage en BDD
+                if security.verify_password(mfa_input, hashed_code):
+                    is_valid_recovery = True
+                    # 🚨 RÈGLE D'OR : On supprime le code de secours utilisé !
+                    hashed_codes.pop(idx)
+                    admin.mfa_recovery_codes = json.dumps(hashed_codes)
+                    db.commit()
+                    break # On sort de la boucle, on a trouvé le bon code
+                    
+        # C. Si ni le TOTP ni le code de secours ne sont bons
+        if not is_valid_totp and not is_valid_recovery:
+            raise HTTPException(status_code=401, detail="Code MFA ou de secours invalide")
 
     # 4. Si tout est bon (ou si le MFA n'est pas activé), on génère le JWT
     access_token = security.create_access_token(
@@ -249,7 +272,6 @@ def login_admin(
     
     return {"message": "Authentification réussie"}
 
-    
 # --- ROUTE DE VÉRIFICATION DE SESSION (POUR LE FRONTEND) ---
 @app.get("/api/auth/verify")
 def verify_session(admin: models.DashboardAdmin = Depends(get_current_admin)):
@@ -299,25 +321,37 @@ def enable_mfa(
 ):
     """
     Vérifie le premier code à 6 chiffres tapé par l'admin.
-    Si le code est bon, on verrouille l'activation en BDD.
+    Si le code est bon, on active le MFA et on génère 10 codes de secours à usage unique.
     """
     if not admin.mfa_secret:
         raise HTTPException(status_code=400, detail="Veuillez d'abord initialiser la configuration MFA.")
 
-    # 1. On initialise le comparateur TOTP avec le secret enregistré en BDD
+    # 1. Vérification du code TOTP
     totp = pyotp.TOTP(admin.mfa_secret)
-    
-    # 2. On vérifie si le code à 6 chiffres envoyé correspond au code actuel
-    # verify() tolère un léger décalage temporel classique
     if not totp.verify(payload.code):
         raise HTTPException(status_code=400, detail="Code MFA invalide ou expiré.")
 
-    # 3. Si c'est bon, on active officiellement le MFA pour ce compte !
+    # ✨ 2. GÉNÉRATION DES CODES DE SECOURS (Nouveau) ✨
+    # On génère 10 codes au format "XXXX-XXXX-XXXX" (ex: "A1B2-C3D4-E5F6")
+    plain_recovery_codes = [
+        f"{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}".upper() 
+        for _ in range(10)
+    ]
+    
+    # 3. On hache ces codes avant de les stocker en BDD (Sécurité maximale)
+    hashed_codes = [security.get_password_hash(code) for code in plain_recovery_codes]
+    
+    # 4. Enregistrement en base de données
     admin.mfa_enabled = True
+    admin.mfa_recovery_codes = json.dumps(hashed_codes) # On stocke la liste sous forme de chaîne JSON
     db.commit()
 
-    return {"message": "Authentification multifacteur (MFA) activée avec succès !"}
-
+    # 5. On renvoie les codes EN CLAIR au frontend. 
+    # C'est la SEULE fois où ils existeront hors de la BDD !
+    return {
+        "message": "Authentification multifacteur (MFA) activée avec succès !",
+        "recovery_codes": plain_recovery_codes 
+    }
 
 # --- ROUTE DE DÉCONNEXION (SUPPRESSION DU COOKIE) ---
 @app.post("/api/auth/logout")

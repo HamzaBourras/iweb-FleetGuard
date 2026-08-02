@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator, JSON, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator, JSON, Boolean, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from cryptography.fernet import Fernet
@@ -112,3 +112,6 @@ class DashboardAdmin(Base):
     # ✨ NOUVELLES COLONNES POUR LE MFA ✨
     mfa_secret = Column(String(32), nullable=True) # Clé secrète générée par pyotp
     mfa_enabled = Column(Boolean, default=False)   # Indique si le MFA est actif
+
+    # ✨ NOUVELLE COLONNE POUR LES CODES DE SECOURS ✨
+    mfa_recovery_codes = Column(Text, nullable=True) # Stockera une liste de codes hachés au format JSON ou texte

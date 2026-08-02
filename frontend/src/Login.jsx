@@ -14,6 +14,8 @@ export default function Login() {
   // ✨ NOUVEAUX ÉTATS POUR LE MFA ✨
   const [mfaCode, setMfaCode] = useState('');
   const [requiresMfa, setRequiresMfa] = useState(false);
+  // Etats pour la récupération (si vous voulez gérer les codes de récupération)
+  const [useRecovery, setUseRecovery] = useState(false); // ✨ NOUVEAU
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -85,6 +87,7 @@ export default function Login() {
           {/* AFFICHAGE CONDITIONNEL : IDENTIFIANTS OU CODE MFA */}
           {!requiresMfa ? (
             <>
+              {/* ... (Tes champs email et password existants restent identiques) ... */}
               <div className="animate-fade-in">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Adresse Email
@@ -117,35 +120,50 @@ export default function Login() {
             <div className="animate-fade-in space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2 text-center">
-                  Code à 6 chiffres (Google Auth / Authy)
+                  {useRecovery ? "Code de secours à usage unique" : "Code à 6 chiffres (Google Auth / Authy)"}
                 </label>
                 <input 
                   type="text" 
                   required
-                  maxLength="6"
-                  pattern="\d{6}"
                   value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))} // N'accepte que les chiffres
-                  className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors text-center text-2xl tracking-[0.5em] font-mono shadow-inner"
-                  placeholder="000000"
+                  onChange={(e) => {
+                    // Si on est en mode secours, on accepte tout (lettres, chiffres, tirets).
+                    // Sinon, on n'accepte que les chiffres.
+                    const val = e.target.value;
+                    setMfaCode(useRecovery ? val.toUpperCase() : val.replace(/\D/g, ''));
+                  }}
+                  maxLength={useRecovery ? 14 : 6}
+                  className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors text-center text-xl tracking-[0.2em] font-mono shadow-inner uppercase"
+                  placeholder={useRecovery ? "XXXX-XXXX-XXXX" : "000000"}
                   autoComplete="off"
                   autoFocus
                 />
               </div>
-              <button 
-                type="button"
-                onClick={() => { setRequiresMfa(false); setMfaCode(''); }}
-                className="w-full text-sm text-gray-500 hover:text-gray-700 transition-colors"
-              >
-                Retour aux identifiants
-              </button>
+              
+              <div className="flex flex-col gap-2">
+                <button 
+                  type="button"
+                  onClick={() => { setUseRecovery(!useRecovery); setMfaCode(''); }}
+                  className="w-full text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                >
+                  {useRecovery ? "Utiliser l'application d'authentification" : "J'ai perdu mon téléphone (Code de secours)"}
+                </button>
+                
+                <button 
+                  type="button"
+                  onClick={() => { setRequiresMfa(false); setUseRecovery(false); setMfaCode(''); }}
+                  className="w-full text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                >
+                  Annuler et retourner aux identifiants
+                </button>
+              </div>
             </div>
           )}
 
           <button 
             type="submit"
-            disabled={isLoading || (requiresMfa && mfaCode.length !== 6)}
-            className={`w-full text-white font-bold py-3 px-4 rounded-lg shadow transition-all duration-200 ${isLoading || (requiresMfa && mfaCode.length !== 6) ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg'}`}
+            disabled={isLoading || (requiresMfa && !useRecovery && mfaCode.length !== 6) || (requiresMfa && useRecovery && mfaCode.length < 10)}
+            className={`w-full text-white font-bold py-3 px-4 rounded-lg shadow transition-all duration-200 ${isLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg'}`}
           >
             {isLoading 
               ? 'Vérification...' 

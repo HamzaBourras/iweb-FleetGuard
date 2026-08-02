@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { ShieldCheck, X, RefreshCw, AlertTriangle, Smartphone } from 'lucide-react';
+import { ShieldCheck, X, RefreshCw, AlertTriangle, Smartphone, Download, Copy, Check } from 'lucide-react';
 
 export default function MfaSetupModal({ onClose, showNotification }) {
   const [qrUri, setQrUri] = useState('');
   const [secret, setSecret] = useState('');
   const [mfaCode, setMfaCode] = useState('');
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  // ✨ NOUVEAUX ÉTATS POUR LES CODES DE SECOURS ✨
+  const [recoveryCodes, setRecoveryCodes] = useState([]);
+  const [copied, setCopied] = useState(false);
 
   // 1. Récupération des données MFA au chargement de la modale
   useEffect(() => {
@@ -19,9 +23,9 @@ export default function MfaSetupModal({ onClose, showNotification }) {
           method: 'GET',
           credentials: 'include' // 🛡️ Toujours inclure le cookie HttpOnly
         });
-        
+
         if (!response.ok) throw new Error("Impossible de communiquer avec le serveur.");
-        
+
         const data = await response.json();
         setQrUri(data.qr_uri);
         setSecret(data.secret);
@@ -35,7 +39,7 @@ export default function MfaSetupModal({ onClose, showNotification }) {
     fetchMfaSetup();
   }, []);
 
-  // 2. Soumission du code à 6 chiffres pour validation finale
+  // 2. Soumission du code MFA pour validation et activation et récupérer les codes de secures
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -49,14 +53,17 @@ export default function MfaSetupModal({ onClose, showNotification }) {
         body: JSON.stringify({ code: mfaCode })
       });
 
+      const data = await response.json(); // On parse la réponse pour récupérer les données
+
       if (!response.ok) {
-        const errData = await response.json().catch(() => null);
-        throw new Error(errData?.detail || "Le code est invalide ou a expiré.");
+        throw new Error(data.detail || "Le code est invalide ou a expiré.");
       }
 
       showNotification('success', "L'authentification multifacteur (MFA) est désormais active !");
-      onClose(); // On ferme la modale en cas de succès
-      
+
+      // 🚨 AU LIEU DE FERMER, ON AFFICHE LES CODES DE SECOURS :
+      setRecoveryCodes(data.recovery_codes);
+
     } catch (err) {
       setError(err.message);
     } finally {
@@ -64,10 +71,31 @@ export default function MfaSetupModal({ onClose, showNotification }) {
     }
   };
 
+
+  // 3. Gestion du copier-coller et du téléchargement des codes de secours
+  const handleCopyCodes = () => {
+    navigator.clipboard.writeText(recoveryCodes.join('\n'));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownloadCodes = () => {
+    const element = document.createElement("a");
+    const file = new Blob([`Codes de secours FleetGuard SOC\n\n${recoveryCodes.join('\n')}\n\nÀ conserver en lieu sûr. Chaque code est à usage unique.`], { type: 'text/plain' });
+    element.href = URL.createObjectURL(file);
+    element.download = "fleetguard-recovery-codes.txt";
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+
+
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden scale-100 transition-transform">
-        
+
         {/* --- EN-TÊTE --- */}
         <div className="p-6 bg-slate-900 border-b border-slate-800 flex items-start justify-between">
           <div className="flex items-center gap-4">
@@ -90,9 +118,58 @@ export default function MfaSetupModal({ onClose, showNotification }) {
               <RefreshCw className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
               <p className="text-sm font-bold">Génération des clés cryptographiques...</p>
             </div>
+          ) : recoveryCodes.length > 0 ? (
+
+            /* ========================================================= */
+            /* ÉCRAN DES CODES DE SECOURS (APRÈS ACTIVATION RÉUSSIE)     */
+            /* ========================================================= */
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl">
+                <h4 className="text-sm font-black text-amber-900 flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  Sauvegardez vos codes de secours
+                </h4>
+                <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                  Si vous perdez votre téléphone, ces codes sont le <strong>seul moyen</strong> d'accéder à votre tableau de bord.
+                  Ils ne seront plus jamais affichés. Chaque code ne peut être utilisé qu'une seule fois.
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  {recoveryCodes.map((code, index) => (
+                    <code key={index} className="block py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono font-bold text-slate-700 shadow-sm select-all">
+                      {code}
+                    </code>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleCopyCodes}
+                  className="flex-1 py-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-sm"
+                >
+                  {copied ? <><Check className="w-4 h-4 text-emerald-500" /> Copié</> : <><Copy className="w-4 h-4" /> Copier</>}
+                </button>
+                <button
+                  onClick={handleDownloadCodes}
+                  className="flex-1 py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <Download className="w-4 h-4" /> Télécharger .txt
+                </button>
+              </div>
+
+              <button
+                onClick={onClose}
+                className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm transition-all flex items-center justify-center shadow-md"
+              >
+                J'ai sauvegardé mes codes (Terminer)
+              </button>
+            </div>
           ) : (
             <div className="space-y-6">
-              
+
               {/* --- ÉTAPE 1 : QR CODE --- */}
               <div className="text-center space-y-3">
                 <div className="inline-flex items-center justify-center p-4 bg-white border-2 border-slate-100 rounded-2xl shadow-sm">
@@ -124,7 +201,7 @@ export default function MfaSetupModal({ onClose, showNotification }) {
                     {error}
                   </div>
                 )}
-                
+
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
                     <Smartphone className="w-4 h-4" /> 2. Code de confirmation à 6 chiffres
