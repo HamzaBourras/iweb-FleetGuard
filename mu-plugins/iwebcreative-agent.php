@@ -11,8 +11,6 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// 2. Définition de la clé secrète (À modifier par la suite pour la production)
-define( 'IWEB_AGENT_SECRET_TOKEN', 'IWEB_SECURE_TOKEN_2026_XYZ' );
 
 // 3. Enregistrement de la route API REST personnalisée
 add_action( 'rest_api_init', function () {
@@ -56,16 +54,16 @@ function iweb_verify_bearer_token( WP_REST_Request $request ) {
     
     $token_recu = $matches[1];
 
-    // On récupère le jeton stocké dynamiquement dans le code source
-    $token_local = IWEB_AGENT_SECRET_TOKEN; 
-
-    if ( ! $token_local ) {
+    // On vérifie si le jeton a bien été défini dans le wp-config.php par l'administrateur
+    if ( ! defined( 'IWEB_AGENT_SECRET_TOKEN' ) || empty( IWEB_AGENT_SECRET_TOKEN ) ) {
         return new WP_Error(
             'rest_forbidden',
-            'Agent non configuré : Aucun jeton de sécurité enregistré sur ce site.',
+            'Agent non configure : Le jeton de securite IWEB_AGENT_SECRET_TOKEN est manquant dans le fichier wp-config.php.',
             [ 'status' => 401 ]
         );
     }
+
+    $token_local = IWEB_AGENT_SECRET_TOKEN;
 
     // Comparaison cryptographique sécurisée contre les attaques temporelles
     if ( hash_equals( $token_local, $token_recu ) ) {
@@ -154,13 +152,16 @@ function iweb_log_security_event( $event_type, $severity, $message ) {
     if ( count( $logs ) > 50 ) { array_shift( $logs ); }
     set_transient( 'iweb_security_logs', $logs, DAY_IN_SECONDS );
 
-
     // --- 2. TRANSMISSION TEMPS RÉEL AU SOC FASTAPI ---
     
-    // ⚠️ ATTENTION RÉSEAU DOCKER : 
-    // Si WP est dans un conteneur et FastAPI dans un autre, localhost ne marchera pas.
-    // Utilise le nom du service Docker (ex: http://backend:8000/api/alerts) 
-    // ou l'IP de ta machine hôte (http://host.docker.internal:8000/api/alerts).
+    // ✨ CORRECTION : On vérifie si la constante existe pour éviter un Crash (Fatal Error)
+    $token = defined( 'IWEB_AGENT_SECRET_TOKEN' ) ? IWEB_AGENT_SECRET_TOKEN : '';
+
+    // Si le token n'est pas défini dans wp-config, on n'envoie pas la requête externe
+    if ( empty( $token ) ) {
+        return; 
+    }
+
     $api_url = 'https://candy-amenity-tricking.ngrok-free.dev/api/alerts'; 
 
     $payload = wp_json_encode([
@@ -177,12 +178,12 @@ function iweb_log_security_event( $event_type, $severity, $message ) {
     // Envoi de la requête HTTP
     wp_remote_post( $api_url, [
         'method'      => 'POST',
-        'timeout'     => 3, // Timeout court pour ne pas bloquer l'affichage du site client
+        'timeout'     => 3, 
         'redirection' => 0,
-        'blocking'    => false, // IMPORTANT : Exécution asynchrone ("Fire and forget")
+        'blocking'    => false, 
         'headers'     => [
             'Content-Type'  => 'application/json',
-            'Authorization' => 'Bearer ' . IWEB_AGENT_SECRET_TOKEN
+            'Authorization' => 'Bearer ' . $token // Utilisation sécurisée de la variable
         ],
         'body'        => $payload,
     ]);
@@ -423,4 +424,46 @@ function iweb_delete_malicious_file( WP_REST_Request $request ) {
     } else {
         return new WP_Error( 'delete_failed', 'Impossible de supprimer le fichier. Verifiez les permissions (CHMOD) du serveur.', [ 'status' => 500 ] );
     }
+}
+
+
+// ========================================================================
+// 11. Système de Heartbeat (Signal de vie)
+// ========================================================================
+
+// A. Planification de la tâche lors de l'activation de l'extension
+register_activation_hook( __FILE__, 'iweb_schedule_heartbeat' );
+function iweb_schedule_heartbeat() {
+    if ( ! wp_next_scheduled( 'iweb_agent_heartbeat_cron' ) ) {
+        // Envoi du signal toutes les heures
+        wp_schedule_event( time(), 'hourly', 'iweb_agent_heartbeat_cron' );
+    }
+}
+
+// B. Nettoyage lors de la désactivation
+register_deactivation_hook( __FILE__, 'iweb_unschedule_heartbeat' );
+function iweb_unschedule_heartbeat() {
+    $timestamp = wp_next_scheduled( 'iweb_agent_heartbeat_cron' );
+    if ( $timestamp ) {
+        wp_unschedule_event( $timestamp, 'iweb_agent_heartbeat_cron' );
+    }
+}
+
+// C. La fonction qui envoie réellement le signal à ton SOC
+add_action( 'iweb_agent_heartbeat_cron', 'iweb_send_heartbeat' );
+function iweb_send_heartbeat() {
+    $token = defined( 'IWEB_AGENT_SECRET_TOKEN' ) ? IWEB_AGENT_SECRET_TOKEN : '';
+    if ( empty( $token ) ) return;
+
+    // ⚠️ Remplace par l'URL de ton API Heartbeat
+    $api_url = 'https://candy-amenity-tricking.ngrok-free.dev/api/agent/heartbeat';
+
+    wp_remote_post( $api_url, [
+        'method'      => 'POST',
+        'timeout'     => 5,
+        'blocking'    => false, // Ici on peut rester asynchrone, ce n'est pas critique
+        'headers'     => [
+            'Authorization' => 'Bearer ' . $token
+        ]
+    ]);
 }

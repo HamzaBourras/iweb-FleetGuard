@@ -12,6 +12,7 @@ import httpx
 import time
 from pydantic import BaseModel
 import pyotp
+from fastapi import Request, HTTPException
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -133,6 +134,7 @@ def recalculate_health_score(site, db: Session):
 
     db.commit()
     db.refresh(site)
+    
 
 # 4. Route pour recevoir les alertes de l'agent PHP
 @app.post("/api/alerts")
@@ -484,7 +486,21 @@ def get_all_sites(
     ).all()
 
     # 3. AJOUT DES MÉTRIQUES POUR LE DASHBOARD
+    sites_with_dynamic_status = []
+    maintenant = datetime.utcnow()
+
     for site in sites:
+        # A. Déduction du statut basée sur le Heartbeat (ex: 2 heures de tolérance)
+        current_status = "en_attente"
+
+        if site.last_seen:
+            diff = maintenant - site.last_seen
+            # Si le dernier signal date de moins de 2 heures (7200 secondes), il est actif
+            if diff.total_seconds() < 7200:
+                current_status = "actif"
+            else:
+                current_status = "injoignable"
+                
         # On s'assure d'avoir la variable alerts_count pour le composant React
         if hasattr(site, 'alerts'):
             # On filtre pour ne compter que les alertes non archivées/résolues
@@ -494,6 +510,46 @@ def get_all_sites(
             site.alerts_count = 0
 
     return sites
+
+# --- 4. NOUVELLE ROUTE : OBTENIR LE STATUT D'UN SITE ---
+@app.get("/api/sites/{site_id}/status")
+def get_site_status(
+    site_id: int, 
+    admin: models.DashboardAdmin = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Site introuvable")
+
+    if site.deleted_at:
+        return {"status": "en_corbeille"}
+
+    maintenant = datetime.utcnow()
+    current_status = "en_attente"
+
+    if site.last_seen:
+        derniere_vue = site.last_seen
+        # Sécurité de format
+        if isinstance(derniere_vue, str):
+            try:
+                derniere_vue = datetime.fromisoformat(derniere_vue.replace("Z", "+00:00"))
+            except ValueError:
+                derniere_vue = maintenant
+
+        diff = maintenant - derniere_vue
+        
+        # Validation du Heartbeat (2 heures max)
+        if diff.total_seconds() < 7200:
+            current_status = "actif"
+        else:
+            current_status = "injoignable"
+
+    return {
+        "status": current_status,
+        "last_check": site.last_seen.isoformat() if site.last_seen else None
+    }
 
 #**** Ajout d'un nouveau site client (protégé par JWT) ****
 # --- SCHÉMA DE DONNÉES ---
@@ -566,8 +622,7 @@ def create_site(
         "id": nouveau_site.id,
         "site_name": nouveau_site.site_name,
         "url": nouveau_site.url,
-        "secret_token": raw_token, 
-        "status": "actif"
+        "secret_token": raw_token
     }
 
 
@@ -1107,6 +1162,39 @@ def update_site_settings(
         "scan_frequency": site.scan_frequency
     }
 
+
+# --- ROUTE DE HEARTBEAT DE L'AGENT PHP POUR SIGNALER SON ÉTAT ---
+@app.post("/api/agent/heartbeat")
+def agent_heartbeat(request: Request, db: Session = Depends(get_db)):
+    # 1. Récupération du token depuis le header HTTP
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token manquant ou invalide")
+    
+    token_recu = auth_header.split(" ")[1]
+
+    # 2. Recherche du site correspondant via la DÉCHIFFREMENT sécurisé (Fernet)
+    sites = db.query(models.ClientSite).all()
+    site_trouve = None
+    
+    for site in sites:
+        try:
+            # On utilise la même logique que pour la réception des alertes
+            decrypted_token = security.decrypt_token(site.secret_token)
+            if token_recu == decrypted_token:
+                site_trouve = site
+                break
+        except Exception:
+            continue
+            
+    if not site_trouve:
+        raise HTTPException(status_code=401, detail="Agent non autorisé : Jeton invalide.")
+
+    # 3. Mise à jour de l'heure du dernier signe de vie
+    site_trouve.last_seen = datetime.utcnow()
+    db.commit()
+
+    return {"status": "success", "message": "Heartbeat enregistré avec succès."}
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger

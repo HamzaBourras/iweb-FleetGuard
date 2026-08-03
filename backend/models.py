@@ -68,6 +68,8 @@ class ClientSite(Base):
     # Configuration des scans automatiques
     auto_scan_enabled = Column(Boolean, default=False)
     scan_frequency = Column(Integer, default=24) # Fréquence en heures (par défaut 24h)
+    # Enregistre le dernier signe de vie de l'agent
+    last_seen = Column(DateTime, nullable=True, default=None)
 
 
 class SecurityAlert(Base):

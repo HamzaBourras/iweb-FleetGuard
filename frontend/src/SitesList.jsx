@@ -1,6 +1,119 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye, ChevronLeft, ChevronRight, Radar, X } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye, ChevronLeft, ChevronRight, Radar, X, WifiOff, AlertTriangle } from 'lucide-react';
+
+
+// NOUVEAU COMPOSANT : Il gère sa propre requête API et affiche la date
+const LiveSiteStatus = ({ siteId, isDeleted }) => {
+  const [status, setStatus] = useState('loading');
+  const [lastCheck, setLastCheck] = useState(null); // ✨ NOUVEAU : État pour la date
+
+  useEffect(() => {
+    if (isDeleted) {
+      setStatus('en_corbeille');
+      return;
+    }
+
+    const fetchStatus = async () => {
+      try {
+        const response = await fetch(`http://localhost:8000/api/sites/${siteId}/status`, {
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setStatus(data.status);
+          setLastCheck(data.last_check); // ✨ NOUVEAU : On sauvegarde la date
+        } else {
+          setStatus('erreur');
+        }
+      } catch (error) {
+        setStatus('erreur');
+      }
+    };
+
+    fetchStatus();
+
+    // Rafraîchir le statut toutes les minutes
+    const interval = setInterval(fetchStatus, 60000);
+    return () => clearInterval(interval);
+
+  }, [siteId, isDeleted]);
+
+  // ✨ NOUVEAU : Fonction de formatage de la date ISO vers un format lisible (Français)
+  const formatLastCheck = (dateString) => {
+    if (!dateString) return "En attente";
+    const date = new Date(dateString);
+    return date.toLocaleString('fr-FR', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // On extrait la génération du badge dans une fonction pour garder le code propre
+  const renderBadge = () => {
+    if (status === 'loading') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-1 rounded-full text-[10px] md:text-xs font-bold bg-slate-50 text-slate-500 border border-slate-200">
+          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Vérification...
+        </span>
+      );
+    }
+    if (status === 'en_corbeille') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-1 rounded-full text-[10px] md:text-xs font-bold bg-red-100 text-red-700 border border-red-200">
+          ⏳ Destr. 12h
+        </span>
+      );
+    }
+    if (status === 'actif') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-1 rounded-full text-[10px] md:text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="relative flex h-1.5 w-1.5 md:h-2 md:w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 md:h-2 md:w-2 bg-emerald-500"></span>
+          </span>
+          Actif
+        </span>
+      );
+    }
+    if (status === 'injoignable') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-1 rounded-full text-[10px] md:text-xs font-bold bg-slate-100 text-slate-600 border border-slate-300">
+          <WifiOff className="w-3.5 h-3.5" /> Injoignable
+        </span>
+      );
+    }
+    if (status === 'en_attente') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-1 rounded-full text-[10px] md:text-xs font-bold bg-slate-100 text-slate-500 border border-slate-200">
+          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> En attente...
+        </span>
+      );
+    }
+    // Fallback (Erreur réseau / Agent désactivé)
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-1 rounded-full text-[10px] md:text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+        <ShieldAlert className="w-3.5 h-3.5" /> Hors ligne
+      </span>
+    );
+  };
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      {/* 1. On affiche le badge de statut */}
+      {renderBadge()}
+      
+      {/* 2. On affiche la date subtilement en dessous (si pertinent) */}
+      {status !== 'loading' && status !== 'en_corbeille' && (
+        <span className="text-[10px] md:text-[11px] text-slate-400 font-medium pl-1">
+          {formatLastCheck(lastCheck)}
+        </span>
+      )}
+    </div>
+  );
+};
 
 export default function SitesList() {
   const navigate = useNavigate();
@@ -43,7 +156,7 @@ export default function SitesList() {
   );
 
   const fetchSites = async () => {
-    
+
     try {
       const response = await fetch('http://localhost:8000/api/sites', {
         method: 'GET',
@@ -74,16 +187,16 @@ export default function SitesList() {
   const confirmDelete = async () => {
     if (!siteToDelete) return;
     setIsDeleting(true);
-    
+
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${siteToDelete}`, {
         method: 'DELETE',
         credentials: 'include'
       });
       if (response.ok) {
-          await fetchSites();
-          // ✨ NOUVEAU
-          showNotification('success', 'Le site a été placé en corbeille (conservation 12h).');
+        await fetchSites();
+        // ✨ NOUVEAU
+        showNotification('success', 'Le site a été placé en corbeille (conservation 12h).');
       }
       else {
         showNotification('error', "Erreur lors de la mise en corbeille du site.");
@@ -101,16 +214,16 @@ export default function SitesList() {
   const confirmRestore = async () => {
     if (!siteToRestore) return;
     setIsRestoring(true);
-    
+
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${siteToRestore}/restore`, {
         method: 'PUT',
         credentials: 'include'
       });
       if (response.ok) {
-          await fetchSites();
-          // ✨ NOUVEAU
-          showNotification('success', 'La supervision du site a été restaurée.');
+        await fetchSites();
+        // ✨ NOUVEAU
+        showNotification('success', 'La supervision du site a été restaurée.');
       }
       else {
         showNotification('error', "Erreur lors de la restauration du site.");
@@ -131,7 +244,7 @@ export default function SitesList() {
   const handleAddSite = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    
+
     try {
       const response = await fetch('http://localhost:8000/api/sites', {
         method: 'POST',
@@ -246,19 +359,8 @@ export default function SitesList() {
                         </span>
                       </td>
                       <td className="px-4 md:px-6 py-4">
-                        {isDeleted ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-1 rounded-full text-[10px] md:text-xs font-bold bg-red-100 text-red-700 border border-red-200">
-                            ⏳ Destr. 12h
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-1 rounded-full text-[10px] md:text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <span className="relative flex h-1.5 w-1.5 md:h-2 md:w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 md:h-2 md:w-2 bg-emerald-500"></span>
-                            </span>
-                            Actif
-                          </span>
-                        )}
+                        {/* On délègue toute la logique à notre nouveau sous-composant autonome */}
+                        <LiveSiteStatus siteId={site.id} isDeleted={isDeleted} />
                       </td>
 
                       <td className="px-4 md:px-6 py-4 text-right">
