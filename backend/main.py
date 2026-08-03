@@ -890,7 +890,7 @@ async def scan_site(
 
     # 4. Mettre à jour les données du site dans PostgreSQL
     try:
-        site.last_scan_at = datetime.utcnow()
+        # site.last_scan_at = datetime.utcnow()
         site.wp_version = scan_data.get("core", {}).get("wp_version")
         site.php_version = scan_data.get("core", {}).get("php_version")
         # ✨ NOUVEAU : Sauvegarde de la liste des plugins
@@ -1016,6 +1016,9 @@ async def run_malware_scan(
             
             response.raise_for_status()
             scan_data = response.json()
+
+        # On met à jour la date du dernier scan dans la base de données
+        site.last_scan_at = datetime.utcnow()
 
         # 5. Mise à jour de la base de données avec les résultats du scan
        # Dans ta fonction de scan malware (lors de la réception de la réponse PHP) :
