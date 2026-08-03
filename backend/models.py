@@ -117,3 +117,34 @@ class DashboardAdmin(Base):
 
     # ✨ NOUVELLE COLONNE POUR LES CODES DE SECOURS ✨
     mfa_recovery_codes = Column(Text, nullable=True) # Stockera une liste de codes hachés au format JSON ou texte
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Le type strict basé sur tes critères
+    # Valeurs attendues : "alerte de sécurité", "activation de mfa", "fichier malvaillant trouvé", "mot de passe modifié", "récupération de codes de secours"
+    type = Column(String(100), nullable=False)
+    
+    # Contenu de la notification
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    
+    # État de la notification (pour la cloche 🔔 sur le frontend React)
+    is_read = Column(Boolean, default=False)
+    
+    # Horodatage
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # --- Relations (Optionnelles mais très utiles) ---
+    # Si la notification concerne un site spécifique (ex: fichier malveillant trouvé)
+    site_id = Column(Integer, ForeignKey("client_sites.id", ondelete="CASCADE"), nullable=True)
+    
+    # Si la notification concerne un compte administrateur (ex: MFA activé, mot de passe modifié)
+    admin_id = Column(Integer, ForeignKey("dashboard_admins.id", ondelete="CASCADE"), nullable=True)
+
+    # Permet d'accéder facilement à notification.site ou notification.admin dans FastAPI
+    site = relationship("ClientSite")
+    admin = relationship("DashboardAdmin")

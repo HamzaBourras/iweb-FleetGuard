@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List, Any
+from datetime import datetime
 
 # Schéma pour recevoir la mise à jour depuis React
 class SiteSettingsUpdate(BaseModel):
@@ -49,3 +50,18 @@ class PasswordChangeRequest(BaseModel):
 
 class RecoveryCodesRequest(BaseModel):
     password: str
+
+class NotificationBase(BaseModel):
+    type: str
+    title: str
+    message: str
+    site_id: Optional[int] = None
+    admin_id: Optional[int] = None
+
+class NotificationResponse(NotificationBase):
+    id: int
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

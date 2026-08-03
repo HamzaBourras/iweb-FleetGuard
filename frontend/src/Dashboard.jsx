@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Globe, ShieldAlert, LogOut, Menu, X, BookOpen, ShieldCheck, CheckCircle2, ChevronDown, User } from 'lucide-react';
 import logoImg from './assets/logo-dark.png';
+import NotificationDropdown from './NotificationDropdown';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -203,89 +204,95 @@ export default function Dashboard() {
           </div>
         )}
 
-          {/* HEADER DYNAMIQUE */}
-          <header className="bg-white/80 backdrop-blur-md shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] h-[72px] flex items-center justify-between px-4 md:px-8 border-b border-slate-200 shrink-0 z-10">
-            <div className="flex items-center gap-3">
-              {/* Bouton Hamburger Mobile */}
+        {/* HEADER DYNAMIQUE */}
+        <header className="bg-white/80 backdrop-blur-md shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] h-[72px] flex items-center justify-between px-4 md:px-8 border-b border-slate-200 shrink-0 z-10">
+          <div className="flex items-center gap-3">
+            {/* Bouton Hamburger Mobile */}
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+
+            {/* Le titre dynamique est injecté ici */}
+            <h2 className="text-lg md:text-xl font-bold text-slate-800 tracking-tight transition-all duration-300 truncate max-w-[150px] sm:max-w-none">
+              {getPageTitle()}
+            </h2>
+          </div>
+
+          {/* ✨ NOUVEAU MENU DROIT (BADGE + PROFIL) ✨ */}
+          <div className="flex items-center gap-4">
+
+            
+            <div className="flex items-center gap-4">
+              <NotificationDropdown />
+              {/* Tes autres éléments de profil ou de déconnexion */}
+            </div>
+
+            <div className="hidden sm:flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <span className="text-xs font-bold tracking-wide text-emerald-700 uppercase">
+                Session Active
+              </span>
+            </div>
+
+            {/* DROPDOWN PROFIL */}
+            <div className="relative">
               <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none"
+                onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                className="flex items-center gap-2 p-1 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none"
               >
-                <Menu className="w-6 h-6" />
+                <div className="w-9 h-9 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold shadow-sm">
+                  A
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-500 hidden md:block" />
               </button>
 
-              {/* Le titre dynamique est injecté ici */}
-              <h2 className="text-lg md:text-xl font-bold text-slate-800 tracking-tight transition-all duration-300 truncate max-w-[150px] sm:max-w-none">
-                {getPageTitle()}
-              </h2>
-            </div>
+              {isProfileMenuOpen && (
+                <>
+                  {/* Overlay invisible pour fermer le menu si on clique en dehors */}
+                  <div className="fixed inset-0 z-40" onClick={() => setIsProfileMenuOpen(false)}></div>
 
-            {/* ✨ NOUVEAU MENU DROIT (BADGE + PROFIL) ✨ */}
-            <div className="flex items-center gap-4">
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50 animate-fade-in origin-top-right">
+                    <button
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        navigate('/dashboard/profile');
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors"
+                    >
+                      <User className="w-4 h-4 text-slate-400" />
+                      Mon Profil
+                    </button>
 
-              <div className="hidden sm:flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                </span>
-                <span className="text-xs font-bold tracking-wide text-emerald-700 uppercase">
-                  Session Active
-                </span>
-              </div>
+                    <hr className="my-1 border-slate-100" />
 
-              {/* DROPDOWN PROFIL */}
-              <div className="relative">
-                <button
-                  onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                  className="flex items-center gap-2 p-1 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none"
-                >
-                  <div className="w-9 h-9 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold shadow-sm">
-                    A
+                    <button
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        handleLogout();
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4 text-red-400" />
+                      Déconnexion
+                    </button>
                   </div>
-                  <ChevronDown className="w-4 h-4 text-slate-500 hidden md:block" />
-                </button>
-
-                {isProfileMenuOpen && (
-                  <>
-                    {/* Overlay invisible pour fermer le menu si on clique en dehors */}
-                    <div className="fixed inset-0 z-40" onClick={() => setIsProfileMenuOpen(false)}></div>
-
-                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50 animate-fade-in origin-top-right">
-                      <button
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          navigate('/dashboard/profile');
-                        }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors"
-                      >
-                        <User className="w-4 h-4 text-slate-400" />
-                        Mon Profil
-                      </button>
-
-                      <hr className="my-1 border-slate-100" />
-
-                      <button
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          handleLogout();
-                        }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
-                      >
-                        <LogOut className="w-4 h-4 text-red-400" />
-                        Déconnexion
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-
+                </>
+              )}
             </div>
-          </header>
 
-          {/* CORPS DE LA PAGE */}
-          <main className="p-4 md:p-8 flex-1 overflow-y-auto bg-slate-50/50">
-            <Outlet context={{ setDynamicSiteName }} />
-          </main>
+          </div>
+        </header>
+
+        {/* CORPS DE LA PAGE */}
+        <main className="p-4 md:p-8 flex-1 overflow-y-auto bg-slate-50/50">
+          <Outlet context={{ setDynamicSiteName }} />
+        </main>
       </div>
 
     </div>

@@ -1,4 +1,7 @@
-from fastapi import FastAPI, Request, Depends, HTTPException, Header, APIRouter, Response
+import os
+
+from fastapi import FastAPI, Request, Depends, HTTPException, Header, APIRouter, Response, BackgroundTasks
+from email_service import send_soc_email
 from jose import jwt, JWTError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session, selectinload
@@ -12,7 +15,7 @@ import httpx
 import time
 from pydantic import BaseModel
 import pyotp
-from fastapi import Request, HTTPException
+from typing import Optional
 
 # 1. Configuration de la connexion à la Base de Données PostgreSQL
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -139,7 +142,8 @@ def recalculate_health_score(site, db: Session):
 # 4. Route pour recevoir les alertes de l'agent PHP
 @app.post("/api/alerts")
 def receive_agent_alerts(
-    payload: schemas.AgentPayload,          
+    payload: schemas.AgentPayload,  
+    background_tasks: BackgroundTasks,        
     authorization: str = Header(None),      
     db: Session = Depends(get_db)           
 ):
@@ -167,7 +171,10 @@ def receive_agent_alerts(
     # --- ENREGISTREMENT DES ALERTES ET CALCUL DU MALUS ---
     penalite_score = 0
 
+    email_destinataire = os.getenv("SOC_ALERT_EMAIL", "")
+
     for event in payload.security_events:
+        # 1. Enregistrement de l'Alerte dans la BDD
         nouvelle_alerte = models.SecurityAlert(
             site_id=site_client.id,
             event_type=event.event_type,
@@ -177,7 +184,26 @@ def receive_agent_alerts(
         )
         db.add(nouvelle_alerte)
 
-        # Calcul de la pénalité selon la gravité de l'alerte
+        # 2. Enregistrement de la Notification In-App (Frontend)
+        nouvelle_notification = models.Notification(
+            type="alerte de sécurité",
+            title=f"Menace {event.severity.upper()} sur {site_client.site_name}",
+            message=f"[{event.event_type}] {event.message} (IP: {event.ip_address})",
+            site_id=site_client.id
+        )
+        db.add(nouvelle_notification)
+
+        # 3. Filtrage et Envoi de l'Email
+        if event.severity in ["critical", "high"]:
+            background_tasks.add_task(
+                send_soc_email,
+                destinataire=email_destinataire,
+                sujet=f"Menace {event.severity.upper()} détectée sur {site_client.site_name}",
+                type_alerte="Alerte de sécurité",
+                message_alerte=f"L'agent de sécurité a intercepté une attaque de niveau {event.severity.upper()}.\n\nCible: {site_client.site_name} ({site_client.url})\nMenace: {event.event_type}\nSource: {event.ip_address}\nDétails: {event.message}"
+            )
+
+        # 4. Calcul de la pénalité selon la gravité de l'alerte
         if event.severity == "critical":
             penalite_score += 15
         elif event.severity == "high":
@@ -322,6 +348,7 @@ def setup_mfa(
 @app.post("/api/auth/mfa/enable")
 def enable_mfa(
     payload: schemas.MfaEnableRequest, 
+    background_tasks: BackgroundTasks,
     admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
@@ -352,6 +379,25 @@ def enable_mfa(
     admin.mfa_recovery_codes = json.dumps(hashed_codes) # On stocke la liste sous forme de chaîne JSON
     db.commit()
 
+    # Notification In-App
+    notif = models.Notification(
+        type="activation de mfa",
+        title="Sécurité Renforcée (MFA)",
+        message=f"L'authentification multifacteur a été activée sur votre compte.",
+        admin_id=admin.id
+    )
+    db.add(notif)
+    db.commit()
+
+    # Envoi de l'Email en arrière-plan
+    background_tasks.add_task(
+        send_soc_email,
+        destinataire=os.getenv("SOC_ALERT_EMAIL", ""),
+        sujet="MFA activé sur votre compte FleetGuard",
+        type_alerte="Activation de MFA",
+        message_alerte="L'authentification à double facteur (MFA) vient d'être activée sur votre compte d'administration. Si vous n'êtes pas à l'origine de cette action, contactez immédiatement le support."
+    )
+
     # 5. On renvoie les codes EN CLAIR au frontend. 
     # C'est la SEULE fois où ils existeront hors de la BDD !
     return {
@@ -364,6 +410,7 @@ def enable_mfa(
 @app.post("/api/auth/mfa/regenerate-recovery-codes")
 def regenerate_recovery_codes(
     payload: schemas.RecoveryCodesRequest,
+    background_tasks: BackgroundTasks,
     admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
@@ -381,7 +428,25 @@ def regenerate_recovery_codes(
     # 3. Hachage et enregistrement (écrase les anciens)
     hashed_codes = [security.get_password_hash(code) for code in plain_codes]
     admin.mfa_recovery_codes = json.dumps(hashed_codes)
+
+    # Notification In-App
+    notif = models.Notification(
+        type="récupération de codes de secours",
+        title="Codes de secours régénérés",
+        message="Vos codes de secours d'urgence ont été renouvelés.",
+        admin_id=admin.id
+    )
+    db.add(notif)
     db.commit()
+
+    # Envoi de l'Email
+    background_tasks.add_task(
+        send_soc_email,
+        destinataire=os.getenv("SOC_ALERT_EMAIL", ""),
+        sujet="Vos codes de secours ont été régénérés",
+        type_alerte="Récupération de codes de secours",
+        message_alerte="De nouveaux codes de secours ont été générés pour votre compte. Vos anciens codes ont été révoqués et ne sont plus valides."
+    )
     
     # 4. Envoi de la version en clair pour affichage unique
     return {
@@ -409,6 +474,7 @@ def logout_admin(response: Response, admin: models.DashboardAdmin = Depends(get_
 @app.post("/api/auth/change-password")
 def change_password(
     payload: schemas.PasswordChangeRequest,
+    background_tasks: BackgroundTasks,
     admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
@@ -422,7 +488,25 @@ def change_password(
 
     # 3. Hacher le nouveau mot de passe et l'enregistrer
     admin.hashed_password = security.get_password_hash(payload.new_password)
+
+    # Notification In-App
+    notif = models.Notification(
+        type="mot de passe modifié",
+        title="Mot de passe modifié",
+        message="Le mot de passe de votre compte a été changé avec succès.",
+        admin_id=admin.id
+    )
+    db.add(notif)
     db.commit()
+
+    # Envoi de l'Email
+    background_tasks.add_task(
+        send_soc_email,
+        destinataire=os.getenv("SOC_ALERT_EMAIL", ""),
+        sujet="Modification de votre mot de passe",
+        type_alerte="Mot de passe modifié",
+        message_alerte="Le mot de passe de votre compte d'administration a été modifié avec succès. Si vous n'êtes pas à l'origine de cette action, votre compte est potentiellement compromis."
+    )
 
     return {"message": "Votre mot de passe a été modifié avec succès."}
 
@@ -900,6 +984,7 @@ async def get_threat_intelligence(admin: models.DashboardAdmin = Depends(get_cur
 @app.post("/api/sites/{site_id}/malware-scan")
 async def run_malware_scan(
     site_id: int, 
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     try:
@@ -945,6 +1030,27 @@ async def run_malware_scan(
         # Si des fichiers malveillants sont trouvés, on fait chuter le score de santé
         if len(menaces_reelles) > 0:
             site.health_score = 0 
+
+            # ✨ NOUVEAU : Notification In-App
+            notif = models.Notification(
+                type="fichier malvaillant trouvé",
+                title=f"Malware(s) détecté(s) sur {site.site_name}",
+                message=f"Le scan heuristique a détecté {len(menaces_reelles)} fichier(s) suspect(s) nécessitant une intervention immédiate.",
+                site_id=site.id
+            )
+            db.add(notif)
+            
+            # ✨ NOUVEAU : Alerte Email à l'adresse globale du SOC
+            email_destinataire = os.getenv("SOC_ALERT_EMAIL", "admin@iweb.com")
+            email_msg = f"L'analyse anti-malware a détecté {len(menaces_reelles)} fichier(s) malveillant(s) ou web shells sur {site.url}.\n\nRendez-vous dans la console SOC pour neutraliser la menace."
+            
+            if background_tasks:
+                background_tasks.add_task(
+                    send_soc_email, email_destinataire, f"Alerte Critique : Malware détecté sur {site.site_name}", "Fichier malvaillant trouvé", email_msg
+                )
+            else:
+                # Si déclenché par le Cron (qui tourne déjà en arrière-plan), on exécute directement
+                send_soc_email(email_destinataire, f"Alerte Critique : Malware détecté sur {site.site_name}", "Fichier malvaillant trouvé", email_msg)
         
         db.commit()
         db.refresh(site)
@@ -1163,6 +1269,35 @@ def update_site_settings(
     }
 
 
+# --- ROUTE : Récupérer toutes les notifications de l'admin ---
+@app.get("/api/notifications")
+def get_admin_notifications(
+    admin: models.DashboardAdmin = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    # On récupère les 30 dernières notifications, de la plus récente à la plus ancienne
+    notifications = db.query(models.Notification)\
+        .order_by(models.Notification.created_at.desc())\
+        .limit(30)\
+        .all()
+    return notifications
+
+# --- ROUTE : Marquer une notification comme lue ---
+@app.patch("/api/notifications/{notification_id}/read")
+def mark_notification_as_read(
+    notification_id: int,
+    admin: models.DashboardAdmin = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    notif = db.query(models.Notification).filter(models.Notification.id == notification_id).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification introuvable.")
+    
+    notif.is_read = True
+    db.commit()
+    return {"status": "success", "message": "Notification marquée comme lue."}
+
+
 # --- ROUTE DE HEARTBEAT DE L'AGENT PHP POUR SIGNALER SON ÉTAT ---
 @app.post("/api/agent/heartbeat")
 def agent_heartbeat(request: Request, db: Session = Depends(get_db)):
@@ -1290,3 +1425,4 @@ def stop_scheduler():
 #     db.add(nouveau_site)
 #     db.commit()
 #     return {"message": "Site de test créé avec succès dans PostgreSQL !"}
+
