@@ -160,7 +160,7 @@ export default function SecurityAlerts() {
 
                     {/* Date */}
                     <td className="px-4 md:px-6 py-3 md:py-4 text-slate-500 font-mono text-[10px] md:text-xs">
-                      {new Date(alert.timestamp || Date.now()).toLocaleString('fr-FR', {
+                      {new Date(alert.timestamp + 'Z').toLocaleString('fr-FR', {
                         day: '2-digit', month: '2-digit', year: 'numeric',
                         hour: '2-digit', minute: '2-digit', second: '2-digit'
                       })}

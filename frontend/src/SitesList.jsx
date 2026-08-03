@@ -41,15 +41,21 @@ const LiveSiteStatus = ({ siteId, isDeleted }) => {
 
   // ✨ NOUVEAU : Fonction de formatage de la date ISO vers un format lisible (Français)
   const formatLastCheck = (dateString) => {
-    if (!dateString) return "En attente";
-    const date = new Date(dateString);
-    return date.toLocaleString('fr-FR', {
-      day: '2-digit',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  if (!dateString) return "En attente";
+  
+  // 1. On s'assure que la date se termine par 'Z' pour forcer l'UTC
+  const safeDateString = dateString.endsWith('Z') ? dateString : `${dateString}Z`;
+  
+  // 2. On crée l'objet Date (qui va faire la conversion locale automatiquement)
+  const date = new Date(safeDateString);
+  
+  return date.toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
 
   // On extrait la génération du badge dans une fonction pour garder le code propre
   const renderBadge = () => {
@@ -321,7 +327,7 @@ export default function SitesList() {
                 <th className="px-4 md:px-6 py-4 md:py-5 font-semibold">Nom du Site</th>
                 <th className="px-4 md:px-6 py-4 md:py-5 font-semibold">URL Site</th>
                 <th className="px-4 md:px-6 py-4 md:py-5 font-semibold hidden sm:table-cell">Token Agent</th>
-                <th className="px-4 md:px-6 py-4 md:py-5 font-semibold">Statut</th>
+                <th className="px-4 md:px-6 py-4 md:py-5 font-semibold">Statut Agent</th>
                 <th className="px-4 md:px-6 py-4 md:py-5 font-semibold text-right">Actions</th>
               </tr>
             </thead>

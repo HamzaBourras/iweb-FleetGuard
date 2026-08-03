@@ -100,7 +100,7 @@ export default function NotificationDropdown() {
           {/* L'icône tremble quand une nouvelle notification arrive */}
           <Bell className={`w-5 h-5 ${showNewBadge ? 'animate-bounce text-blue-600' : ''}`} />
           
-          {unreadCount > 0 && (
+          {unreadCount >= 0 && (
             <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow-sm animate-pulse">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
@@ -136,7 +136,7 @@ export default function NotificationDropdown() {
                       <p className="text-xs font-bold text-slate-800 truncate">{notif.title}</p>
                       <p className="text-xs text-slate-600 mt-1 leading-relaxed">{notif.message}</p>
                       <span className="text-[10px] text-slate-400 mt-2 block font-mono">
-                        {new Date(notif.created_at).toLocaleString('fr-FR')}
+                        {new Date(notif.created_at + 'Z').toLocaleString('fr-FR')}
                       </span>
                     </div>
 

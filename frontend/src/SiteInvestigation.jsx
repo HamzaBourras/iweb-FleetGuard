@@ -695,7 +695,7 @@ export default function SiteInvestigation() {
             <div className="text-lg font-black text-slate-800 flex items-center gap-2">
               <Clock className="w-4 h-4 text-slate-400" />
               {site.last_admin_login
-                ? new Date(site.last_admin_login).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
+                ? new Date(site.last_admin_login + 'Z').toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
                 : "Aucune donnée"
               }
             </div>
@@ -948,7 +948,7 @@ export default function SiteInvestigation() {
                       <h4 className="font-bold text-slate-800">{alert.message}</h4>
                     </div>
                     <div className="text-sm font-medium text-slate-400 whitespace-nowrap">
-                      {new Date(alert.timestamp).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}
+                      {new Date(alert.timestamp + 'Z').toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}
                     </div>
                     <button
                       onClick={() => setAlertToResolve(alert)}

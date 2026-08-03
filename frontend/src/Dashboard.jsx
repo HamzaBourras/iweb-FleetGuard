@@ -3,6 +3,7 @@ import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Globe, ShieldAlert, LogOut, Menu, X, BookOpen, ShieldCheck, CheckCircle2, ChevronDown, User } from 'lucide-react';
 import logoImg from './assets/logo-dark.png';
 import NotificationDropdown from './NotificationDropdown';
+import SystemClock from './SystemClock';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -224,11 +225,12 @@ export default function Dashboard() {
           {/* ✨ NOUVEAU MENU DROIT (BADGE + PROFIL) ✨ */}
           <div className="flex items-center gap-4">
 
-            
-            <div className="flex items-center gap-4">
-              <NotificationDropdown />
-              {/* Tes autres éléments de profil ou de déconnexion */}
-            </div>
+
+            {/* NOUVEAU : Composant d'horloge système */}
+            <SystemClock />
+
+            {/* Le système de notifications */}
+            <NotificationDropdown />
 
             <div className="hidden sm:flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
               <span className="relative flex h-2.5 w-2.5">
