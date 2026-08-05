@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye, ChevronLeft, ChevronRight, Radar, X, WifiOff, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye, ChevronLeft, ChevronRight, Radar, X, WifiOff, AlertTriangle, Search, Filter, ChevronDown } from 'lucide-react';
 
 
 // NOUVEAU COMPOSANT : Il gère sa propre requête API et affiche la date
@@ -144,6 +144,49 @@ export default function SitesList() {
   const [siteToRestore, setSiteToRestore] = useState(null); // Stocke l'ID du site à restaurer
   const [isRestoring, setIsRestoring] = useState(false); // État de chargement du bouton
 
+  // ✨ NOUVEAUX ÉTATS : Recherche et Filtrage
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'active', 'trash'
+
+  // États pour la pagination
+  const [sitePage, setSitePage] = useState(1);
+  const sitesPerPage = 2;
+
+  // ✨ NOUVELLE LOGIQUE : Filtrage des sites avant la pagination
+  const filteredSites = sites.filter(site => {
+    // 1. Recherche par texte (Nom ou URL)
+    const matchesSearch = 
+      site.site_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      site.url.toLowerCase().includes(searchQuery.toLowerCase());
+
+    // 2. Filtrage par statut (Corbeille vs Actif)
+    const isDeleted = site.deleted_at !== null;
+    let matchesFilter = true;
+    
+    if (statusFilter === 'active') matchesFilter = !isDeleted;
+    if (statusFilter === 'trash') matchesFilter = isDeleted;
+
+    return matchesSearch && matchesFilter;
+  });
+
+  // ✨ MISE À JOUR : La pagination se base maintenant sur les sites filtrés
+  const totalSitePages = Math.ceil(filteredSites.length / sitesPerPage);
+  const currentSites = filteredSites.slice(
+    (sitePage - 1) * sitesPerPage,
+    sitePage * sitesPerPage
+  );
+
+  // Fonction utilitaire pour réinitialiser la page quand on cherche
+  const handleSearch = (value) => {
+    setSearchQuery(value);
+    setSitePage(1); // Retour à la page 1 lors d'une nouvelle recherche
+  };
+
+  const handleFilter = (value) => {
+    setStatusFilter(value);
+    setSitePage(1);
+  };
+
   // --- ÉTATS POUR LES NOTIFICATIONS TOAST ---
   const [notification, setNotification] = useState(null);
 
@@ -151,15 +194,6 @@ export default function SitesList() {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 5000); // Disparaît après 5 secondes
   };
-
-  // États pour la pagination
-  const [sitePage, setSitePage] = useState(1);
-  const sitesPerPage = 10;
-  const totalSitePages = Math.ceil(sites.length / sitesPerPage);
-  const currentSites = sites.slice(
-    (sitePage - 1) * sitesPerPage,
-    sitePage * sitesPerPage
-  );
 
   const fetchSites = async () => {
 
@@ -313,6 +347,44 @@ export default function SitesList() {
           Ajouter un site
         </button>
       </div>
+
+      {/* --- BARRE DE RECHERCHE ET FILTRES --- */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        {/* Barre de recherche */}
+        <div className="relative flex-1">
+          <div className="absolute inset-y-0 left-0 pl-3 md:pl-4 flex items-center pointer-events-none">
+            <Search className="h-4 w-4 md:h-5 md:w-5 text-slate-400" />
+          </div>
+          <input
+            type="text"
+            placeholder="Rechercher par nom de site ou URL..."
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="w-full pl-10 md:pl-12 pr-4 py-2.5 md:py-3 bg-white border border-slate-200 rounded-xl md:rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm font-semibold text-slate-700 placeholder:text-slate-400 placeholder:font-medium shadow-sm"
+          />
+        </div>
+
+        {/* Menu déroulant des filtres */}
+        <div className="relative min-w-[200px]">
+          <div className="absolute inset-y-0 left-0 pl-3 md:pl-4 flex items-center pointer-events-none">
+            <Filter className="h-4 w-4 md:h-5 md:w-5 text-slate-400" />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => handleFilter(e.target.value)}
+            className="w-full pl-10 md:pl-12 pr-10 py-2.5 md:py-3 bg-white border border-slate-200 rounded-xl md:rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm font-bold text-slate-700 shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="all">Tous les sites</option>
+            <option value="active">En supervision (Actifs)</option>
+            <option value="trash">En corbeille (Désactivés)</option>
+          </select>
+          {/* Icône de flèche personnalisée pour le select */}
+          <div className="absolute inset-y-0 right-0 pr-3 md:pr-4 flex items-center pointer-events-none">
+            <ChevronDown className="h-4 w-4 text-slate-400" />
+          </div>
+        </div>
+      </div>
+
 
       {/* --- TABLEAU PRINCIPAL --- */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">

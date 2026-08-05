@@ -11,7 +11,8 @@ import {
   AlertTriangle,
   Eye,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Search, Filter, ChevronDown 
 } from 'lucide-react';
 
 export default function SecurityAlerts() {
@@ -20,13 +21,46 @@ export default function SecurityAlerts() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
+  // ✨ NOUVEAUX ÉTATS : Recherche et Filtrage
+  const [searchQuery, setSearchQuery] = useState('');
+  const [severityFilter, setSeverityFilter] = useState('all'); // 'all', 'critical', 'high', 'medium', 'low'
+
   const [alertPage, setAlertPage] = useState(1);
   const alertsPerPage = 10;
-  const totalAlertPages = Math.ceil(alerts.length / alertsPerPage);
-  const currentAlerts = alerts.slice(
+
+  // ✨ NOUVELLE LOGIQUE : Filtrage des alertes avant la pagination
+  const filteredAlerts = alerts.filter(alert => {
+    // 1. Recherche par texte multicritères (Type, IP, Cible, Message)
+    const query = searchQuery.toLowerCase();
+    const matchesSearch = 
+      (alert.event_type || '').toLowerCase().includes(query) ||
+      (alert.ip_address || '').toLowerCase().includes(query) ||
+      (alert.site_name || '').toLowerCase().includes(query) ||
+      (alert.message || '').toLowerCase().includes(query);
+
+    // 2. Filtrage par niveau de sévérité
+    const matchesSeverity = severityFilter === 'all' || (alert.severity || '').toLowerCase() === severityFilter;
+
+    return matchesSearch && matchesSeverity;
+  });
+
+  // ✨ MISE À JOUR : Pagination basée sur les résultats filtrés
+  const totalAlertPages = Math.ceil(filteredAlerts.length / alertsPerPage);
+  const currentAlerts = filteredAlerts.slice(
     (alertPage - 1) * alertsPerPage,
     alertPage * alertsPerPage
   );
+
+  // Réinitialisation de la page lors d'une nouvelle recherche
+  const handleSearch = (value) => {
+    setSearchQuery(value);
+    setAlertPage(1);
+  };
+
+  const handleFilter = (value) => {
+    setSeverityFilter(value);
+    setAlertPage(1);
+  };
 
   useEffect(() => {
     const fetchAlerts = async () => {
@@ -125,6 +159,42 @@ export default function SecurityAlerts() {
           {error}
         </div>
       )}
+
+      {/* --- BARRE DE RECHERCHE ET FILTRES --- */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-slate-400" />
+          </div>
+          <input
+            type="text"
+            placeholder="Rechercher par signature, IP, cible ou détails..."
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl md:rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm font-semibold text-slate-700 placeholder:text-slate-400 placeholder:font-medium shadow-sm"
+          />
+        </div>
+
+        <div className="relative min-w-[220px]">
+          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+            <Filter className="h-5 w-5 text-slate-400" />
+          </div>
+          <select
+            value={severityFilter}
+            onChange={(e) => handleFilter(e.target.value)}
+            className="w-full pl-12 pr-10 py-3 bg-white border border-slate-200 rounded-xl md:rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm font-bold text-slate-700 shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="all">Toutes les sévérités</option>
+            <option value="critical">Critique</option>
+            <option value="high">Élevée</option>
+            <option value="medium">Moyenne</option>
+            <option value="low">Basse / Info</option>
+          </select>
+          <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+            <ChevronDown className="h-4 w-4 text-slate-400" />
+          </div>
+        </div>
+      </div>
 
       {/* --- TABLEAU DES ALERTES --- */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
