@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { User, ShieldAlert, ShieldCheck, Mail, Lock, Key, Info } from 'lucide-react';
-import MfaSetupModal from './MfaSetupModal'; 
-import ChangePasswordModal from './ChangePasswordModal';
-import RecoveryCodesModal from './RecoveryCodesModal';
+import MfaSetupModal from '../components/MfaSetupModal'; 
+import ChangePasswordModal from '../components/ChangePasswordModal';
+import RecoveryCodesModal from '../components/RecoveryCodesModal';
 
 export default function Profile() {
   const [showMfaModal, setShowMfaModal] = useState(false);

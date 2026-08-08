@@ -150,7 +150,7 @@ export default function SitesList() {
 
   // États pour la pagination
   const [sitePage, setSitePage] = useState(1);
-  const sitesPerPage = 2;
+  const sitesPerPage = 10;
 
   // ✨ NOUVELLE LOGIQUE : Filtrage des sites avant la pagination
   const filteredSites = sites.filter(site => {
@@ -207,7 +207,7 @@ export default function SitesList() {
       setSites(data);
     } catch (err) {
       setError(err.message);
-      // console.log(err);
+      
     } finally {
       setIsLoading(false);
     }

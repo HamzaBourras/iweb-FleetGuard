@@ -1,16 +1,15 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Login from './Login';
-import Dashboard from './Dashboard';
-import ProtectedRoute from './ProtectedRoute';
-import PublicRoute from './PublicRoute'; 
-import Guide from './Guide';
-import SiteInvestigation from './SiteInvestigation';
-import Profile from './Profile';
+import Login from './views/Login';
+import Dashboard from './views/Dashboard';
+import Guide from './views/Guide';
+import SiteInvestigation from './views/SiteInvestigation';
+import Profile from './views/Profile';
+import Overview from './views/Overview';
+import SitesList from './views/SitesList';
+import SecurityAlerts from './views/SecurityAlerts';
 
-// Importation de nos nouvelles vues
-import Overview from './Overview';
-import SitesList from './SitesList';
-import SecurityAlerts from './SecurityAlerts';
+import PublicRoute from './router/PublicRoute'; 
+import ProtectedRoute from './router/ProtectedRoute';
 
 export default function App() {
   return (

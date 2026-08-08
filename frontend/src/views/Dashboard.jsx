@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 // ✨ NOUVEAU : Import de PanelLeftClose et menu pour le bouton
 import { LayoutDashboard, Globe, ShieldAlert, LogOut, Menu, X, BookOpen, ShieldCheck, CheckCircle2, ChevronDown, User, PanelLeftClose } from 'lucide-react';
-import logoImg from './assets/logo-dark.png';
-import NotificationDropdown from './NotificationDropdown';
-import SystemClock from './SystemClock';
+import logoImg from '../assets/logo-dark.png';
+import NotificationDropdown from '../components/NotificationDropdown';
+import SystemClock from '../components/SystemClock';
 
 export default function Dashboard() {
   const navigate = useNavigate();

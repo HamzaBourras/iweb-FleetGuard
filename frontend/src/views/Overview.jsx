@@ -69,7 +69,7 @@ export default function Overview() {
     .sort((a, b) => a.health_score - b.health_score)
     .slice(0, 3);
 
-    // console.log(criticalSites);
+    
     
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in">
