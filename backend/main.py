@@ -1,7 +1,7 @@
 import os
 
 from fastapi import FastAPI, Request, Depends, HTTPException, Header, APIRouter, Response, BackgroundTasks
-from email_service import send_soc_email
+from backend.app.services.email_service import send_soc_email
 from jose import jwt, JWTError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session, selectinload
@@ -27,9 +27,9 @@ Base = declarative_base()
 
 # --- LA CORRECTION EST ICI ---
 # On importe les modèles APRÈS avoir défini Base pour éviter l'importation circulaire
-import models
+import backend.app.models.models as models
 import schemas
-import security
+import backend.app.security.security as security
 
 # On ordonne la création des tables dans PostgreSQL
 models.Base.metadata.create_all(bind=engine)
