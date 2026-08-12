@@ -165,6 +165,47 @@ def get_single_site(
         "scan_frequency": getattr(site, 'scan_frequency', None)
     }
 
+
+# --- ROUTE : PING VERS L'AGENT (VÉRIFICATION DE CONNEXION LÉGÈRE) ---
+@router.post("/{site_id:int}/ping")
+async def ping_site_agent(
+    site_id: int, 
+    db: Session = Depends(get_db), 
+    admin: Optional[models.DashboardAdmin] = Depends(get_current_admin), 
+):
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail="Cible introuvable.")
+
+    base_url = site.url.rstrip('/')
+    timestamp_actuel = int(time.time())
+    
+    # ✨ LA CORRECTION EST ICI : On cible la nouvelle API /status
+    status_endpoint = f"{base_url}/wp-json/iwebcreative/v1/status?nocache={timestamp_actuel}"
+
+    try:
+        decrypted_token = security.decrypt_token(site.secret_token)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Jeton illisible.")
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                status_endpoint, # <-- On utilise la nouvelle variable ici
+                headers={"Authorization": f"Bearer {decrypted_token}"}
+            )
+            
+            if response.status_code == 200:
+                site.last_seen = datetime.utcnow()
+                db.commit()
+                return {"status": "success", "message": "Site en ligne."}
+            else:
+                raise HTTPException(status_code=response.status_code, detail="Le site a refusé la connexion.")
+                
+    except Exception as e:
+        raise HTTPException(status_code=503, detail="Site injoignable.")
+    
+
 # --- ROUTE : OBTENIR LE STATUT (LIVESTATUS) ---
 @router.get("/{site_id:int}/status")
 def get_site_status(

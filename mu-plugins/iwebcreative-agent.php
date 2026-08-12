@@ -35,6 +35,13 @@ add_action( 'rest_api_init', function () {
         'callback'            => 'iweb_delete_malicious_file',
         'permission_callback' => 'iweb_verify_bearer_token',
     ] );
+
+    // ROUTE 4 : Ping ultra-léger pour le Heartbeat horaire
+    register_rest_route( 'iwebcreative/v1', '/status', [
+        'methods'             => 'GET',
+        'callback'            => 'iweb_get_status',
+        'permission_callback' => 'iweb_verify_bearer_token',
+    ] );
 } );
 
 /**
@@ -128,6 +135,18 @@ function iweb_get_health_data() {
         'security_events' => $security_events,
         'last_admin_login'=> $last_admin_time,
         'last_admin_ip'   => $last_admin_ip
+    ] );
+}
+
+/**
+ * 5.B Réponse ultra-légère pour le ping du SOC
+ */
+function iweb_get_status() {
+    // Ne charge aucun plugin, ne fait aucune requête BDD lourde.
+    // Répond instantanément.
+    return rest_ensure_response( [
+        'status'    => 'alive',
+        'timestamp' => current_time( 'mysql' )
     ] );
 }
 
@@ -426,44 +445,3 @@ function iweb_delete_malicious_file( WP_REST_Request $request ) {
     }
 }
 
-
-// ========================================================================
-// 11. Système de Heartbeat (Signal de vie)
-// ========================================================================
-
-// A. Planification de la tâche lors de l'activation de l'extension
-register_activation_hook( __FILE__, 'iweb_schedule_heartbeat' );
-function iweb_schedule_heartbeat() {
-    if ( ! wp_next_scheduled( 'iweb_agent_heartbeat_cron' ) ) {
-        // Envoi du signal toutes les heures
-        wp_schedule_event( time(), 'hourly', 'iweb_agent_heartbeat_cron' );
-    }
-}
-
-// B. Nettoyage lors de la désactivation
-register_deactivation_hook( __FILE__, 'iweb_unschedule_heartbeat' );
-function iweb_unschedule_heartbeat() {
-    $timestamp = wp_next_scheduled( 'iweb_agent_heartbeat_cron' );
-    if ( $timestamp ) {
-        wp_unschedule_event( $timestamp, 'iweb_agent_heartbeat_cron' );
-    }
-}
-
-// C. La fonction qui envoie réellement le signal à ton SOC
-add_action( 'iweb_agent_heartbeat_cron', 'iweb_send_heartbeat' );
-function iweb_send_heartbeat() {
-    $token = defined( 'IWEB_AGENT_SECRET_TOKEN' ) ? IWEB_AGENT_SECRET_TOKEN : '';
-    if ( empty( $token ) ) return;
-
-    // ⚠️ Remplace par l'URL de ton API Heartbeat
-    $api_url = 'https://candy-amenity-tricking.ngrok-free.dev/api/agent/heartbeat';
-
-    wp_remote_post( $api_url, [
-        'method'      => 'POST',
-        'timeout'     => 5,
-        'blocking'    => false, // Ici on peut rester asynchrone, ce n'est pas critique
-        'headers'     => [
-            'Authorization' => 'Bearer ' . $token
-        ]
-    ]);
-}

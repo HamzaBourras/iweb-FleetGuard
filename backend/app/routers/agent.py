@@ -13,48 +13,36 @@ from app.database import SessionLocal
 from app.dependencies import get_db
 
 # On importe les fonctions de scan depuis le routeur des sites
-from app.routers.sites import scan_site, run_malware_scan
+from app.routers.sites import scan_site, run_malware_scan, ping_site_agent
 
 router = APIRouter(
     prefix="/api/agent",
     tags=["Agent Distant & Tâches Automatiques"]
 )
 
-# --- ROUTE DE HEARTBEAT DE L'AGENT PHP POUR QUE L'AGENT PUISSE ÊTRE IDENTIFIÉ ---
-@router.post("/heartbeat")
-def agent_heartbeat(request: Request, db: Session = Depends(get_db)):
-    # 1. Récupération du token depuis le header HTTP
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Token manquant ou invalide")
-    
-    token_recu = auth_header.split(" ")[1]
 
-    # 2. Recherche du site correspondant via le DÉCHIFFREMENT sécurisé (Fernet)
-    sites = db.query(models.ClientSite).all()
-    site_trouve = None
-    
-    for site in sites:
-        try:
-            decrypted_token = security.decrypt_token(site.secret_token)
-            if token_recu == decrypted_token:
-                site_trouve = site
-                break
-        except Exception:
-            continue
+# --- TÂCHE 1 : LE PING LÉGER VERS L'AGENT POUR VERFIER SON STATUT (Toutes les 2 heures) ---
+def run_hourly_pings():
+    print("🤖 [Scheduler] Lancement du ping léger de tous les sites...")
+    db = SessionLocal()
+    try:
+        tous_les_sites = db.query(models.ClientSite).all()
+        for site in tous_les_sites:
+            try:
+                # On appelle le ping en mode synchrone/asynchrone
+                asyncio.run(ping_site_agent(site_id=site.id, db=db, admin=None))
+            except Exception:
+                pass # Si le site est éteint, on ignore pour passer au suivant
             
-    if not site_trouve:
-        raise HTTPException(status_code=401, detail="Agent non autorisé : Jeton invalide.")
-
-    # 3. Mise à jour de l'heure du dernier signe de vie
-    site_trouve.last_seen = datetime.utcnow()
-    db.commit()
-
-    return {"status": "success", "message": "Heartbeat enregistré avec succès."}
+            time.sleep(1) # Petite pause réseau
+    except Exception as e:
+        print(f"🚨 [Scheduler] Erreur lors des pings : {str(e)}")
+    finally:
+        db.close()
 
 
 
-# --- MOTEUR DE TÂCHES AUTOMATIQUES (CRON) POUR LES SCANS AUTOMATIQUES ---
+# --- TÂCHE 2 : LES SCANS LOURDS () (Toutes les 24h ) ---
 scheduler = BackgroundScheduler()
 
 def run_automated_scans():
@@ -111,7 +99,10 @@ def run_automated_scans():
 def start_scheduler():
     # On vérifie si le planificateur ne tourne pas déjà pour éviter le crash avec l'auto-reload d'Uvicorn
     if not scheduler.running:
-        # Le planificateur vérifie toutes les 1 heures s'il y a des scans à faire
+        # 1. Le Ping léger exécuté toutes les 2 heures
+        scheduler.add_job(run_hourly_pings, IntervalTrigger(hours=2))
+        
+        # 2. Les scans lourds vérifiés toutes les heures (qui se déclencheront selon leur propre fréquence de 12h/24h)
         scheduler.add_job(run_automated_scans, IntervalTrigger(hours=1))
         scheduler.start()
         print("⏱️ Planificateur de tâches (APScheduler) démarré.")
