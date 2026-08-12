@@ -5,7 +5,7 @@ from datetime import datetime
 from cryptography.fernet import Fernet
 
 # On importe l'objet Base que nous avons préparé dans main.py
-from main import Base
+from app.database import Base
 
 # 1. Configuration de la clé maîtresse via l'environnement
 # lit la clé qui est sur le fichier .env 
