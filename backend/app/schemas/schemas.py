@@ -2,6 +2,16 @@ from pydantic import BaseModel
 from typing import Optional, List, Any
 from datetime import datetime
 
+class SiteCreate(BaseModel):
+    site_name: str
+    url: str
+
+class DeleteFileRequest(BaseModel):
+    file_path: str
+    
+class FileActionRequest(BaseModel):
+    file_path: str
+
 # Schéma pour recevoir la mise à jour depuis React
 class SiteSettingsUpdate(BaseModel):
     auto_scan_enabled: Optional[bool] = None
@@ -9,7 +19,6 @@ class SiteSettingsUpdate(BaseModel):
 
 
 class SiteResponse(BaseModel):
-    # ... tes autres attributs ...
     
     # Envoi au frontend
     auto_scan_enabled: bool = False
