@@ -131,7 +131,7 @@ def create_site(
     }
 
 # --- ROUTE : VUE DÉTAILLÉE D'UN SEUL SITE ---
-@router.get("/{site_id}")
+@router.get("/{site_id:int}")
 def get_single_site(
     site_id: int, 
     admin: models.DashboardAdmin = Depends(get_current_admin), 
@@ -166,7 +166,7 @@ def get_single_site(
     }
 
 # --- ROUTE : OBTENIR LE STATUT (LIVESTATUS) ---
-@router.get("/{site_id}/status")
+@router.get("/{site_id:int}/status")
 def get_site_status(
     site_id: int, 
     admin: models.DashboardAdmin = Depends(get_current_admin),
@@ -204,7 +204,7 @@ def get_site_status(
     }
 
 # --- ROUTE : MISE EN CORBEILLE ---
-@router.delete("/{site_id}")
+@router.delete("/{site_id:int}")
 def soft_delete_site(
     site_id: int, 
     admin: models.DashboardAdmin = Depends(get_current_admin), 
@@ -219,7 +219,7 @@ def soft_delete_site(
     return {"message": "Le site a été placé en corbeille pour 12 heures."}
 
 # --- ROUTE : RESTAURATION ---
-@router.put("/{site_id}/restore")
+@router.put("/{site_id:int}/restore")
 def restore_site(
     site_id: int, 
     admin: models.DashboardAdmin = Depends(get_current_admin), 
@@ -234,7 +234,7 @@ def restore_site(
     return {"message": "Le site a été restauré avec succès."}
 
 # --- ROUTE : RÉGÉNÉRATION DU TOKEN ---
-@router.post("/{site_id}/regenerate-token")
+@router.post("/{site_id:int}/regenerate-token")
 def regenerate_site_token(
     site_id: int, 
     admin: models.DashboardAdmin = Depends(get_current_admin), 
@@ -258,7 +258,7 @@ def regenerate_site_token(
     }
 
 # --- ROUTE : MISE À JOUR DES PARAMÈTRES (Auto-scan) ---
-@router.patch("/{site_id}/settings")
+@router.patch("/{site_id:int}/settings")
 def update_site_settings(
     site_id: int,
     settings: schemas.SiteSettingsUpdate,
@@ -287,12 +287,11 @@ def update_site_settings(
 # =====================================================================
 
 # --- ROUTE : SCAN FORÉNSIQUE D'UN SITE ---
-@router.post("/{site_id}/scan")
+@router.post("/{site_id:int}/scan")
 async def scan_site(
     site_id: int, 
     db: Session = Depends(get_db), 
-    # Optionnel: on peut forcer l'admin, mais le cron l'utilise sans admin. 
-    # Pour le moment, on garde comme dans l'original (pas d'admin requis strict si appelé par CRON)
+    admin: models.DashboardAdmin = Depends(get_current_admin),
 ):
     site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
     
@@ -348,11 +347,12 @@ async def scan_site(
     }
 
 # --- ROUTE : SCAN ANTI-MALWARE ---
-@router.post("/{site_id}/malware-scan")
+@router.post("/{site_id:int}/malware-scan")
 async def run_malware_scan(
     site_id: int, 
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: models.DashboardAdmin = Depends(get_current_admin),
 ):
     try:
         site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
@@ -432,7 +432,7 @@ async def run_malware_scan(
         raise HTTPException(status_code=500, detail=f"Erreur interne du serveur lors de l'analyse des fichiers. ({str(e)})")
 
 # --- ROUTE : SUPPRESSION D'UN FICHIER MALVEILLANT SUR LE SITE ---
-@router.post("/{site_id}/delete-file")
+@router.post("/{site_id:int}/delete-file")
 async def delete_malicious_file(
     site_id: int, 
     payload: schemas.DeleteFileRequest,
@@ -485,7 +485,7 @@ async def delete_malicious_file(
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- ROUTE : MARQUER UN FICHIER COMME SAIN (WHITELIST) ---
-@router.post("/{site_id}/whitelist-file")
+@router.post("/{site_id:int}/whitelist-file")
 def whitelist_site_file(
     site_id: int,
     payload: schemas.FileActionRequest,
@@ -528,7 +528,7 @@ def whitelist_site_file(
 # =====================================================================
 
 # --- ROUTE : RÉCUPÉRER LES ALERTES D'UN SITE ---
-@router.get("/{site_id}/alerts")
+@router.get("/{site_id:int}/alerts")
 def get_site_alerts(
     site_id: int, 
     limit: int = 10,
@@ -544,7 +544,7 @@ def get_site_alerts(
     return alerts
 
 # --- ROUTE : RÉSOUDRE UNE ALERTE SPÉCIFIQUE ---
-@router.patch("/{site_id}/alerts/{alert_id}/resolve")
+@router.patch("/{site_id:int}/alerts/{alert_id}/resolve")
 async def resolve_security_alert(
     site_id: int, 
     alert_id: int, 
@@ -583,7 +583,7 @@ THREAT_INTEL_CACHE = {
 }
 CACHE_DURATION = 3600 * 12 # 12 heures en secondes
 
-@router.get("/api/site/threat-intel")
+@router.get("/threat-intel")
 async def get_threat_intelligence(admin: models.DashboardAdmin = Depends(get_current_admin)):
     """
     Récupère les dernières versions sécurisées de WP et PHP.

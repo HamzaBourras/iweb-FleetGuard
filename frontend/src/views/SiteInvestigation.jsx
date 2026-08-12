@@ -177,7 +177,7 @@ export default function SiteInvestigation() {
     const fetchThreatIntel = async () => {
       
       try {
-        const response = await fetch('http://localhost:8000/api/site/threat-intel', {
+        const response = await fetch('http://localhost:8000/api/sites/threat-intel', {
           credentials: 'include'
         });
 

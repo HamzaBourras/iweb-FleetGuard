@@ -81,10 +81,18 @@ def run_automated_scans():
                 print(f"🔄 [Scheduler] Démarrage du scan automatique pour le site #{site.id}...")
                 
                 # Exécution des fonctions de scan asynchrones depuis ce thread synchrone
-                asyncio.run(scan_site(site.id, db))
+                asyncio.run(scan_site(
+                    site_id=site.id, 
+                    admin=None, 
+                    db=db
+                ))
                 
-                # ✨ CORRECTION : Ajout de 'None' pour le paramètre background_tasks
-                asyncio.run(run_malware_scan(site.id, None, db))
+                asyncio.run(run_malware_scan(
+                    site_id=site.id, 
+                    background_tasks=None, 
+                    admin=None, 
+                    db=db
+                ))
                 
                 print(f"✅ [Scheduler] Scan terminé pour le site #{site.id}.")
 
@@ -98,11 +106,15 @@ def run_automated_scans():
 
 # On attache le planificateur au cycle de vie du Routeur
 @router.on_event("startup")
+# On attache le planificateur au cycle de vie du Routeur
+@router.on_event("startup")
 def start_scheduler():
-    # Le planificateur vérifie toutes les 1 heures s'il y a des scans à faire
-    scheduler.add_job(run_automated_scans, IntervalTrigger(hours=1))
-    scheduler.start()
-    print("⏱️ Planificateur de tâches (APScheduler) démarré.")
+    # On vérifie si le planificateur ne tourne pas déjà pour éviter le crash avec l'auto-reload d'Uvicorn
+    if not scheduler.running:
+        # Le planificateur vérifie toutes les 1 heures s'il y a des scans à faire
+        scheduler.add_job(run_automated_scans, IntervalTrigger(hours=1))
+        scheduler.start()
+        print("⏱️ Planificateur de tâches (APScheduler) démarré.")
 
 @router.on_event("shutdown")
 def stop_scheduler():
