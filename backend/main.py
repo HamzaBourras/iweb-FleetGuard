@@ -5,8 +5,7 @@ from sqlalchemy import create_engine
 import app.models.models as models
 
 # Import de tes nouveaux routeurs
-# from app.routers import auth, sites, alerts, dashboard
-from app.routers import auth, dashboard, sites
+from app.routers import auth, dashboard, sites, alerts
 
 # Configuration BDD
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -32,7 +31,7 @@ app.add_middleware(
 # On branche les routeurs à l'application principale
 app.include_router(auth.router)
 app.include_router(sites.router)
-# app.include_router(alerts.router)
+app.include_router(alerts.router)
 app.include_router(dashboard.router)
 
 # Route de test
