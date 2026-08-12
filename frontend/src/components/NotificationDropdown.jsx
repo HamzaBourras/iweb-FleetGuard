@@ -12,7 +12,7 @@ export default function NotificationDropdown() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/notifications', {
+      const response = await fetch('http://localhost:8000/api/dashboard/notifications', {
         credentials: 'include'
       });
       if (response.ok) {
@@ -50,7 +50,7 @@ export default function NotificationDropdown() {
 
   const markAsRead = async (id) => {
     try {
-      await fetch(`http://localhost:8000/api/notifications/${id}/read`, {
+      await fetch(`http://localhost:8000/api/dashboard/notifications/${id}/read`, {
         method: 'PATCH',
         credentials: 'include'
       });

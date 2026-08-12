@@ -52,3 +52,34 @@ def get_dashboard_stats(
         "health_score": health_score,
         "chart_data": chart_data
     }
+
+
+
+# ===== === ROUTES POUR LES NOTIFICATIONS DE L'ADMIN (PROTÉGÉES) ===
+# --- ROUTE : Récupérer toutes les notifications de l'admin ---
+@router.get("/notifications")
+def get_admin_notifications(
+    admin: models.DashboardAdmin = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    # On récupère les 30 dernières notifications, de la plus récente à la plus ancienne
+    notifications = db.query(models.Notification)\
+        .order_by(models.Notification.created_at.desc())\
+        .limit(30)\
+        .all()
+    return notifications
+
+# --- ROUTE : Marquer une notification comme lue ---
+@router.patch("/notifications/{notification_id}/read")
+def mark_notification_as_read(
+    notification_id: int,
+    admin: models.DashboardAdmin = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    notif = db.query(models.Notification).filter(models.Notification.id == notification_id).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification introuvable.")
+    
+    notif.is_read = True
+    db.commit()
+    return {"status": "success", "message": "Notification marquée comme lue."}

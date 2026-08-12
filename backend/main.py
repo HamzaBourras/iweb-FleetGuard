@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 import app.models.models as models
 
 # Import de tes nouveaux routeurs
-from app.routers import auth, dashboard, sites, alerts
+from app.routers import auth, dashboard, sites, alerts, agent
 
 # Configuration BDD
 DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
@@ -33,10 +33,5 @@ app.include_router(auth.router)
 app.include_router(sites.router)
 app.include_router(alerts.router)
 app.include_router(dashboard.router)
+app.include_router(agent.router)
 
-# Route de test
-@app.get("/")
-def read_root():
-    return {"status": "En ligne"}
-
-# ... Ton code du planificateur CRON (APScheduler) reste ici ou va dans un fichier séparé ...

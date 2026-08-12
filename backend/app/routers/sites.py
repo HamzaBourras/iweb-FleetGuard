@@ -573,3 +573,62 @@ async def resolve_security_alert(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- SYSTÈME DE CACHE POUR LA THREAT INTELLIGENCE ---
+# Évite d'interroger les API externes à chaque requête (Cache valide 12 heures)
+THREAT_INTEL_CACHE = {
+    "data": None,
+    "last_updated": 0
+}
+CACHE_DURATION = 3600 * 12 # 12 heures en secondes
+
+@router.get("/api/site/threat-intel")
+async def get_threat_intelligence(admin: models.DashboardAdmin = Depends(get_current_admin)):
+    """
+    Récupère les dernières versions sécurisées de WP et PHP.
+    Agit comme un proxy pour isoler le front-end d'Internet.
+    """
+    global THREAT_INTEL_CACHE
+    current_time = time.time()
+    
+    # 1. Vérification du cache : s'il est récent, on le retourne directement
+    if THREAT_INTEL_CACHE["data"] and (current_time - THREAT_INTEL_CACHE["last_updated"]) < CACHE_DURATION:
+        return THREAT_INTEL_CACHE["data"]
+        
+    # 2. Si le cache est vide ou expiré, on interroge les sources officielles
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Récupération de la version WordPress
+            wp_res = await client.get("https://api.wordpress.org/core/version-check/1.7/")
+            wp_res.raise_for_status()
+            wp_data = wp_res.json()
+            latest_wp = wp_data.get("offers", [{}])[0].get("version", None)
+            
+            # Récupération des versions PHP maintenues
+            php_res = await client.get("https://endoflife.date/api/php.json")
+            php_res.raise_for_status()
+            php_data = php_res.json()
+            
+            today = datetime.utcnow().strftime('%Y-%m-%d')
+            # On ne garde que les branches dont la date de fin de vie (eol) est dans le futur
+            active_php_cycles = [v["cycle"] for v in php_data if v.get("eol", "") > today]
+            latest_php = php_data[0].get("latest") if php_data else None
+            
+            intel_data = {
+                "wp": latest_wp,
+                "phpLatest": latest_php,
+                "activePhpCycles": active_php_cycles
+            }
+            
+            # Mise à jour du cache local
+            THREAT_INTEL_CACHE["data"] = intel_data
+            THREAT_INTEL_CACHE["last_updated"] = current_time
+            
+            return intel_data
+            
+    except Exception as e:
+        # Filet de sécurité : en cas de coupure internet du serveur, on renvoie le vieux cache s'il existe
+        if THREAT_INTEL_CACHE["data"]:
+            return THREAT_INTEL_CACHE["data"]
+        raise HTTPException(status_code=503, detail="Service de Threat Intelligence temporairement indisponible.")
