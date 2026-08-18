@@ -15,7 +15,7 @@ export default function Dashboard() {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   
   // ✨ NOUVEAU : État pour réduire/agrandir le menu sur Desktop
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
   const [mfaEnabled, setMfaEnabled] = useState(null); 
   const [dismissMfaAlert, setDismissMfaAlert] = useState(false); 
@@ -190,7 +190,7 @@ export default function Dashboard() {
 
         <div className={`relative z-10 mt-auto pt-4 border-t border-slate-800/50 transition-all duration-300 ${isSidebarCollapsed ? 'opacity-0' : 'opacity-100'}`}>
           <p className="text-center text-xs text-slate-500 font-medium whitespace-nowrap">
-            FleetGuard SOC v1.0
+            FleetGuard SOC v2.0
           </p>
         </div>
       </aside>
