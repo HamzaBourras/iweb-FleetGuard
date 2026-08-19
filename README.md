@@ -16,26 +16,26 @@ Il faut maintenant indiquer aux utilisateurs de copier le fichier d'exemple, pui
 
 Voici la version mise à jour, parfaite et professionnelle, à copier-coller dans ton `README.md` :
 
-```markdown
+
 ### ⚙️ Installation & Démarrage rapide
 
 1. **Cloner le dépôt :**
    ```bash
    git clone [https://github.com/HamzaBourras/iweb-FleetGuard](https://github.com/HamzaBourras/iweb-FleetGuard)
    cd iweb-FleetGuard
-
 ```
+
 
 2. **Configuration de l'environnement (.env) :**
 Par mesure de sécurité (Security by Design), les secrets d'infrastructure ne sont pas versionnés. Un fichier modèle est fourni pour faciliter le déploiement.
 Copiez le fichier d'exemple pour créer votre propre fichier `.env` :
 ```bash
 cp .env.example .env
-
 ```
 
 
-*Ouvrez ensuite le fichier `.env` avec votre éditeur pour configurer vos accès PostgreSQL et vos identifiants SMTP.*
+
+Ouvrez ensuite le fichier `.env` avec votre éditeur pour configurer vos accès PostgreSQL et vos identifiants SMTP.*
 3. **Génération de la clé cryptographique maîtresse :**
 La plateforme nécessite une clé de chiffrement (Fernet/AES) pour sécuriser les jetons de communication avec les agents distants. Générez une clé valide en exécutant cette commande :
 ```bash
@@ -44,7 +44,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 ```
 
 
-*Copiez la chaîne de caractères affichée dans le terminal, et collez-la dans votre fichier `.env` à la ligne `ENCRYPTION_KEY=...*`
+Copiez la chaîne de caractères affichée dans le terminal, et collez-la dans votre fichier `.env` à la ligne `ENCRYPTION_KEY=...*`
 4. **Lancement de l'infrastructure :**
 Une fois l'environnement configuré, démarrez l'ensemble des conteneurs (PostgreSQL, Backend API, Frontend React et Adminer) en arrière-plan :
 ```bash
