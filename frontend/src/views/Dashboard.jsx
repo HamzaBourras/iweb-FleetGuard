@@ -1,3 +1,16 @@
+/**
+ * ============================================================================
+ * Composant : Dashboard.jsx
+ * Rôle      : Layout principal et Navigation du SOC
+ * Description :
+ *    Gabarit global (Wrapper) englobant toutes les vues sécurisées de l'application. 
+ *    Il gère la barre de navigation latérale (Sidebar) responsive, l'en-tête 
+ *    avec les notifications et l'horloge système, ainsi que la vérification 
+ *    de la session active (alertes MFA). Il utilise react-router (Outlet) 
+ *    pour afficher le contenu enfant de manière fluide.
+ * ============================================================================
+ */
+
 import { useState, useEffect } from 'react';
 import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 // ✨ NOUVEAU : Import de PanelLeftClose et menu pour le bouton

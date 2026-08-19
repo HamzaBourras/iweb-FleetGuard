@@ -1,3 +1,16 @@
+"""
+===============================================================================
+Module      : models.py (SQLAlchemy ORM)
+Rôle        : Définition du schéma de la base de données relationnelle
+Description :
+    Ce fichier contient toutes les entités (tables) de la base de données PostgreSQL.
+    Il définit les relations entre les sites clients, les alertes de sécurité,
+    les comptes administrateurs et les notifications. Il intègre également
+    le type personnalisé "EncryptedString" pour le chiffrement/déchiffrement
+    transparent des données sensibles (jetons d'API) à la volée via Fernet.
+===============================================================================
+"""
+
 import os
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator, JSON, Boolean, Text
 from sqlalchemy.orm import relationship

@@ -1,3 +1,16 @@
+"""
+===============================================================================
+Module      : dependencies.py
+Rôle        : Injection de dépendances FastAPI (Middlewares de Sécurité)
+Description :
+    Ce fichier définit les fonctions injectables réutilisables dans les routes.
+    Il contient le générateur de session de base de données (get_db) assurant
+    une ouverture/fermeture propre, ainsi que le verrou de sécurité principal 
+    (get_current_admin) qui lit et valide le cookie JWT pour bloquer les accès 
+    non autorisés aux API privées.
+===============================================================================
+"""
+
 from fastapi import Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 from jose import jwt, JWTError

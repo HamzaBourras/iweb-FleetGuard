@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Composant : MfaSetupModal.jsx
+ * Rôle      : Assistant de configuration de l'Authentification Multifacteur (MFA)
+ * Description :
+ *    Interface étape par étape pour l'activation du TOTP (Time-Based One-Time 
+ *    Password). Elle affiche le QR Code généré par le backend, valide le 
+ *    premier code à 6 chiffres, puis expose de manière éphémère les codes 
+ *    de secours à usage unique pour téléchargement ou copie.
+ * ============================================================================
+ */
+
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { ShieldCheck, X, RefreshCw, AlertTriangle, Smartphone, Download, Copy, Check } from 'lucide-react';

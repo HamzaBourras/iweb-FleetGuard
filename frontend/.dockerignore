@@ -1,3 +1,14 @@
+# ===============================================================================
+# Fichier     : .dockerignore (ou .gitignore)
+# Rôle        : Exclusion des fichiers locaux non nécessaires ou sensibles
+# Description :
+#    Ce fichier indique au moteur de conteneurisation quels dossiers 
+#    et fichiers ne doivent pas être inclus dans le build. En ignorant les 
+#    fichiers de compilation (build, dist) et le lourd dossier "node_modules", 
+#    on garantit une image Docker légère et on force une installation propre 
+#    des dépendances dans le conteneur.
+# ===============================================================================
+
 node_modules
 npm-debug.log
 build

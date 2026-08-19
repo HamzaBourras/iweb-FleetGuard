@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Composant : Profile.jsx
+ * Rôle      : Gestion du profil et des paramètres de sécurité de l'administrateur
+ * Description :
+ *    Espace personnel permettant à l'opérateur SOC de gérer ses propres accès. 
+ *    Il centralise les actions de changement de mot de passe, l'activation 
+ *    ou la reconfiguration du MFA (QR Code), ainsi que la génération et la
+ *    visualisation de ses codes de secours d'urgence à usage unique.
+ * ============================================================================
+ */
+
 import { useState, useEffect } from 'react';
 import { User, ShieldAlert, ShieldCheck, Mail, Lock, Key, Info } from 'lucide-react';
 import MfaSetupModal from '../components/MfaSetupModal'; 

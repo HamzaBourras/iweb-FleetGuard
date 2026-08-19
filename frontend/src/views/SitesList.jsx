@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Composant : SitesList.jsx
+ * Rôle      : Gestionnaire de la flotte WordPress (Actifs)
+ * Description :
+ *    Interface d'administration permettant de superviser l'ensemble des nœuds. 
+ *    Elle gère le provisionnement (ajout de site, génération du jeton Fernet en clair), 
+ *    la mise en corbeille (Soft Delete), la restauration, et affiche en temps 
+ *    réel le statut de connectivité (Live Status) de chaque agent via un sous-composant.
+ * ============================================================================
+ */
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye, ChevronLeft, ChevronRight, Radar, X, WifiOff, AlertTriangle, Search, Filter, ChevronDown } from 'lucide-react';

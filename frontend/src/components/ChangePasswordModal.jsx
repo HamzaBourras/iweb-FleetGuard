@@ -1,3 +1,14 @@
+/**
+ * ============================================================================
+ * Composant : ChangePasswordModal.jsx
+ * Rôle      : Interface de modification du mot de passe administrateur
+ * Description :
+ *    Modale sécurisée permettant à un opérateur SOC de mettre à jour son mot de
+ *    passe. Elle vérifie l'ancien mot de passe avant d'appliquer le nouveau via 
+ *    l'API FastAPI. Inclut des validations côté client (longueur, correspondance).
+ * ============================================================================
+ */
+
 import { useState } from 'react';
 import { Lock, X, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
 

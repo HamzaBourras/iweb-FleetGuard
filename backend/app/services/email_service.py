@@ -1,3 +1,16 @@
+"""
+===============================================================================
+Module      : email_service.py
+Rôle        : Service de communication et d'alerting SMTP
+Description :
+    Ce module gère l'envoi d'e-mails asynchrones pour le SOC. Il génère 
+    des modèles HTML dynamiques (templates professionnels) selon le niveau 
+    de criticité de l'événement (Alerte critique, MFA, Changement de mot de passe) 
+    et assure la livraison des messages via le protocole SMTP pour notifier 
+    les administrateurs en temps réel.
+===============================================================================
+"""
+
 import os
 import smtplib
 from email.mime.text import MIMEText

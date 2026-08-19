@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Composant : PublicRoute.jsx
+ * Rôle      : Filtre de redirection pour les utilisateurs déjà connectés
+ * Description :
+ *    Wrapper inverse de ProtectedRoute, utilisé spécifiquement pour la page
+ *    de connexion (Login). Il vérifie l'existence d'une session active et, 
+ *    si le cookie est valide, empêche l'utilisateur d'accéder au formulaire 
+ *    de login en le redirigeant de force vers son tableau de bord SOC.
+ * ============================================================================
+ */
+
 import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 

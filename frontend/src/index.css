@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Fichier     : index.css
+ * Rôle        : Feuille de style globale et configuration Tailwind CSS
+ * Description :
+ *    Point d'entrée principal des styles de l'application. Il importe 
+ *    le framework Tailwind CSS et définit les animations CSS personnalisées 
+ *    spécifiques à l'interface SOC (comme l'animation "slideDownPopup" 
+ *    utilisée pour l'apparition fluide des modales de résultats de scans).
+ * ============================================================================
+ */
+
 @import "tailwindcss";
 
 @keyframes slideDownPopup {

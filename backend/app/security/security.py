@@ -1,3 +1,17 @@
+"""
+===============================================================================
+Module      : security.py
+Rôle        : Moteur cryptographique central
+Description :
+    Ce module regroupe l'ensemble des fonctions liées à la cryptographie et
+    à la sécurité du backend. Il gère :
+    - Le hachage asymétrique (Bcrypt) des mots de passe.
+    - La génération et validation des badges d'accès JWT.
+    - Le chiffrement symétrique (Fernet AES-128) pour protéger les jetons 
+      d'authentification des agents distants en base de données.
+===============================================================================
+"""
+
 import bcrypt
 from jose import jwt
 from datetime import datetime, timedelta

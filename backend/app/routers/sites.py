@@ -1,3 +1,16 @@
+"""
+===============================================================================
+Module      : sites.py (Routeur FastAPI)
+Rôle        : Gestion du parc informatique (Cibles WordPress) et Investigations
+Description : 
+    Ce fichier centralise toutes les opérations liées aux sites clients. 
+    Il gère le CRUD des sites, la rotation cryptographique des jetons (Key Rotation),
+    ainsi que les requêtes actives (Pull) vers les agents distants pour 
+    les audits forénsiques (SBOM, Versions) et les scans anti-malware (EDR).
+    Il inclut également la logique de remédiation (Destruction de fichiers, Whitelist).
+===============================================================================
+"""
+
 import os
 import secrets
 import time

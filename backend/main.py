@@ -1,3 +1,16 @@
+"""
+===============================================================================
+Module      : main.py
+Rôle        : Point d'entrée principal de l'API FastAPI iweb FleetGuard
+Description :
+    Ce fichier est le cœur du backend. Il initialise l'application FastAPI,
+    configure la connexion à la base de données PostgreSQL et force la création 
+    des tables manquantes. Il définit également les règles de sécurité CORS 
+    pour n'autoriser que le frontend React, et orchestre le routage en connectant 
+    tous les sous-modules (auth, sites, alerts, dashboard, agent).
+===============================================================================
+"""
+
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

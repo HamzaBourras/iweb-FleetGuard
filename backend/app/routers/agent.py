@@ -1,3 +1,17 @@
+"""
+===============================================================================
+Module      : agent.py (Routeur FastAPI & APScheduler)
+Rôle        : Planificateur de Tâches Automatisées (Cron) et Télémétrie
+Description : 
+    Ce fichier héberge le moteur de tâches en arrière-plan (APScheduler) qui 
+    garantit la surveillance continue de la flotte sans intervention humaine.
+    Il orchestre deux cycles distincts :
+    1. Un "Ping" léger (toutes les 2 heures) pour le suivi de connectivité (Live Status).
+    2. Le déclenchement des scans lourds (Anti-Malware & Infrastructure) selon 
+       la politique de sécurité définie pour chaque actif (Auto-Scan).
+===============================================================================
+"""
+
 import time
 import asyncio
 from datetime import datetime

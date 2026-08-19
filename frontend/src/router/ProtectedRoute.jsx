@@ -1,3 +1,16 @@
+/**
+ * ============================================================================
+ * Composant : ProtectedRoute.jsx
+ * Rôle      : Gardien de navigation (Middleware côté client)
+ * Description :
+ *    Wrapper (composant d'enveloppement) qui protège les routes sensibles 
+ *    du tableau de bord. Il interroge le backend FastAPI pour valider 
+ *    le cookie HttpOnly avant d'afficher le contenu. Si la session est 
+ *    invalide ou expirée, l'utilisateur est automatiquement redirigé vers 
+ *    la page de connexion.
+ * ============================================================================
+ */
+
 import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 

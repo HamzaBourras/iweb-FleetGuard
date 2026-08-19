@@ -1,3 +1,16 @@
+/**
+ * ============================================================================
+ * Composant : SiteInvestigation.jsx
+ * Rôle      : Console d'analyse forénsique et de réponse aux incidents (IR)
+ * Description : 
+ *    Interface détaillée d'un actif cible permettant au SOC de visualiser la 
+ *    télémétrie en temps réel. Affiche l'inventaire technologique (SBOM), évalue 
+ *    l'obsolescence (Threat Intel), et liste les alertes et fichiers suspects.
+ *    Offre des actions de remédiation directes : Destruction de payload, Whitelist,
+ *    Rotation de clé cryptographique (Key Rotation) et basculement du mode Auto-Scan.
+ * ============================================================================
+ */
+
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import {

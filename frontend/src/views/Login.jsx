@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Composant : Login.jsx
+ * Rôle      : Portail d'authentification des administrateurs
+ * Description :
+ *    Point d'entrée sécurisé de la plateforme. Ce composant gère la 
+ *    vérification des identifiants et intègre la logique de l'Authentification 
+ *    Multifacteur (MFA). Il gère la bascule dynamique entre la saisie du code 
+ *    TOTP classique et l'utilisation des codes de secours en cas de perte d'appareil.
+ * ============================================================================
+ */
+
 import { useState } from 'react';
 import logoImg from '../assets/logo.png';
 import { useNavigate } from 'react-router-dom';

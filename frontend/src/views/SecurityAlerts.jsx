@@ -1,19 +1,18 @@
+/**
+ * ============================================================================
+ * Composant : SecurityAlerts.jsx
+ * Rôle      : Centre de triage et journal global des alertes
+ * Description :
+ *    Vue tabulaire listant l'intégralité des événements de sécurité interceptés
+ *    par les sondes PHP sur l'ensemble de la flotte. Ce module intègre des fonctionnalités 
+ *    de recherche multicritères, de filtrage par niveau de sévérité et de 
+ *    pagination pour faciliter le travail d'analyse forénsique (Threat Hunting).
+ * ============================================================================
+ */
+
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import {
-  ShieldAlert,
-  Activity,
-  Clock,
-  Terminal,
-  Network,
-  Globe,
-  CheckCircle2,
-  AlertTriangle,
-  Eye,
-  ChevronLeft,
-  ChevronRight,
-  Search, Filter, ChevronDown 
-} from 'lucide-react';
+import { ShieldAlert, Activity, Clock, Terminal, Network, Globe, CheckCircle2, AlertTriangle, Eye, ChevronLeft, ChevronRight, Search, Filter, ChevronDown } from 'lucide-react';
 
 export default function SecurityAlerts() {
   const navigate = useNavigate();
@@ -32,7 +31,7 @@ export default function SecurityAlerts() {
   const filteredAlerts = alerts.filter(alert => {
     // 1. Recherche par texte multicritères (Type, IP, Cible, Message)
     const query = searchQuery.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch =
       (alert.event_type || '').toLowerCase().includes(query) ||
       (alert.ip_address || '').toLowerCase().includes(query) ||
       (alert.site_name || '').toLowerCase().includes(query) ||
@@ -64,7 +63,7 @@ export default function SecurityAlerts() {
 
   useEffect(() => {
     const fetchAlerts = async () => {
-      
+
       try {
         const response = await fetch('http://localhost:8000/api/alerts', {
           method: 'GET',
@@ -279,27 +278,27 @@ export default function SecurityAlerts() {
             </tbody>
           </table>
           {/* ✨ NOUVEAU : Contrôles de pagination pour les alertes */}
-        {totalAlertPages > 1 && (
-          <div className="flex items-center justify-between p-4 border-t border-slate-100 bg-slate-50/50">
-            <button
-              onClick={() => setAlertPage(prev => Math.max(prev - 1, 1))}
-              disabled={alertPage === 1}
-              className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-orange-600"
-            >
-              <ChevronLeft className="w-4 h-4" /> Précédent
-            </button>
-            <span className="text-sm text-slate-500 font-medium">
-              Page {alertPage} sur {totalAlertPages}
-            </span>
-            <button
-              onClick={() => setAlertPage(prev => Math.min(prev + 1, totalAlertPages))}
-              disabled={alertPage === totalAlertPages}
-              className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-orange-600"
-            >
-              Suivant <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+          {totalAlertPages > 1 && (
+            <div className="flex items-center justify-between p-4 border-t border-slate-100 bg-slate-50/50">
+              <button
+                onClick={() => setAlertPage(prev => Math.max(prev - 1, 1))}
+                disabled={alertPage === 1}
+                className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-orange-600"
+              >
+                <ChevronLeft className="w-4 h-4" /> Précédent
+              </button>
+              <span className="text-sm text-slate-500 font-medium">
+                Page {alertPage} sur {totalAlertPages}
+              </span>
+              <button
+                onClick={() => setAlertPage(prev => Math.min(prev + 1, totalAlertPages))}
+                disabled={alertPage === totalAlertPages}
+                className="flex items-center gap-1 text-sm font-bold text-slate-600 disabled:opacity-40 hover:text-orange-600"
+              >
+                Suivant <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

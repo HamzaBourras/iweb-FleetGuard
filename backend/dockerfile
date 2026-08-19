@@ -1,3 +1,13 @@
+# ===============================================================================
+# Fichier     : Dockerfile
+# Rôle        : Recette de conteneurisation du backend Python
+# Description :
+#    Ce fichier définit l'environnement d'exécution isolé pour l'API FastAPI.
+#    Il part d'une image système Python allégée (3.11-slim), installe les 
+#    dépendances nécessaires définies dans le requirements.txt, copie le code 
+#    source métier, et configure le serveur Uvicorn pour exposer le port 8000.
+# ===============================================================================
+
 # On part d'une version allégée de Python
 FROM python:3.11-slim
 

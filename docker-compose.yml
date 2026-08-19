@@ -1,3 +1,15 @@
+# ===============================================================================
+# Fichier     : docker-compose.yml
+# Rôle        : Orchestrateur multi-conteneurs de l'infrastructure FleetGuard
+# Description :
+#    Définit et lie l'ensemble des microservices nécessaires à la plateforme :
+#    1. db        : Base de données relationnelle PostgreSQL 15 (Persistance via volume).
+#    2. api       : Serveur applicatif FastAPI (Backend Python avec rechargement à chaud).
+#    3. frontend  : Interface utilisateur React/Vite (Serveur de développement).
+#    4. adminer   : Outil d'administration léger pour la gestion visuelle de la base de données.
+#    Gère l'isolation réseau, les variables d'environnement et les dépendances inter-services.
+# ===============================================================================
+
 version: '3.8'
 
 services:

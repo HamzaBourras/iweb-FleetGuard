@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Composant : App.jsx
+ * Rôle      : Routeur principal de l'application React
+ * Description :
+ *    Point d'orchestration de la navigation côté client via react-router-dom.
+ *    Il définit l'arborescence des vues, associe chaque URL à son composant 
+ *    respectif (ex: /dashboard/sites/:id), applique les gardiens de sécurité 
+ *    (PublicRoute / ProtectedRoute) et gère les redirections par défaut (Catch-all).
+ * ============================================================================
+ */
+
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './views/Login';
 import Dashboard from './views/Dashboard';

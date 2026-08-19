@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Composant : Overview.jsx
+ * Rôle      : Vue d'ensemble et Statistiques (Tableau de bord principal)
+ * Description :
+ *    Page d'accueil du SOC affichant les indicateurs clés de performance (KPI)
+ *    et le score de santé global de la flotte. Elle intègre un graphique interactif 
+ *    (Recharts) de l'évolution des menaces sur 7 jours et une file d'attente de triage
+ *    automatisée pour mettre en évidence les sites nécessitant une investigation urgente.
+ * ============================================================================
+ */
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';

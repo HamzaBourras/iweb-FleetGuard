@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Composant : RecoveryCodesModal.jsx
+ * Rôle      : Générateur de codes de secours d'urgence (MFA)
+ * Description :
+ *    Modale critique permettant de révoquer les anciens codes de secours et d'en
+ *    générer de nouveaux. Exige une validation préalable du mot de passe pour 
+ *    prévenir les usurpations de session. Offre des options rapides de copie 
+ *    et de téléchargement sécurisé (.txt).
+ * ============================================================================
+ */
+
 import { useState } from 'react';
 import { Key, X, RefreshCw, AlertTriangle, Check, Copy, Download } from 'lucide-react';
 

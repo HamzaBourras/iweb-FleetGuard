@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Composant : NotificationDropdown.jsx
+ * Rôle      : Menu déroulant des alertes et notifications système
+ * Description :
+ *    Composant interactif intégré à la barre de navigation. Il effectue un 
+ *    polling régulier (toutes les 5 secondes) pour récupérer les nouvelles 
+ *    notifications non lues. Il gère l'affichage dynamique du compteur (badge),
+ *    l'animation des nouvelles alertes, et l'action de marquage comme "lu".
+ * ============================================================================
+ */
+
 import { useState, useEffect, useRef } from 'react';
 import { Bell, ShieldAlert, Key, Lock, CheckCircle2 } from 'lucide-react';
 

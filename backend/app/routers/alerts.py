@@ -1,3 +1,16 @@
+"""
+===============================================================================
+Module      : alerts.py (Routeur FastAPI)
+Rôle        : Centre de réception des incidents (SOC) et Notifications
+Description : 
+    Ce routeur agit comme le point d'entrée pour les requêtes "Push" envoyées 
+    par les sondes PHP lorsqu'une attaque est interceptée (Pare-feu applicatif).
+    Il est responsable de l'enregistrement des alertes de sécurité, du calcul 
+    dynamique des malus sur le score de santé, et du déclenchement asynchrone 
+    des notifications par e-mail aux administrateurs du SOC.
+===============================================================================
+"""
+
 import os
 from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
 from sqlalchemy.orm import Session

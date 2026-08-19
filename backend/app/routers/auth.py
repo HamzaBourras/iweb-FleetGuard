@@ -1,3 +1,15 @@
+"""
+===============================================================================
+Module      : auth.py (Routeur FastAPI)
+Rôle        : Gestion de l'authentification et de la sécurité des accès SOC
+Description :
+    Ce fichier gère l'authentification des administrateurs du tableau de bord.
+    Il inclut la connexion via JWT (stocké en cookie HttpOnly pour bloquer le XSS), 
+    la rotation des mots de passe, et la gestion complète de l'Authentification 
+    Multi-Facteurs (MFA) avec génération de codes TOTP et de codes de secours.
+===============================================================================
+"""
+
 import os
 import json
 import secrets

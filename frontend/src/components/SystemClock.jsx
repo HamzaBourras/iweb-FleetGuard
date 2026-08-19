@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * Composant : SystemClock.jsx
+ * Rôle      : Horloge système et indicateur de fuseau horaire
+ * Description :
+ *    Composant visuel léger affichant l'heure locale en temps réel et détectant
+ *    automatiquement le fuseau horaire du navigateur de l'administrateur. 
+ *    Utile dans un contexte SOC pour horodater mentalement les événements 
+ *    analysés dans le tableau de bord.
+ * ============================================================================
+ */
+
 import { useState, useEffect } from 'react';
 import { Globe, Clock } from 'lucide-react';
 

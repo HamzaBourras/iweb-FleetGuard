@@ -1,9 +1,25 @@
 <?php
 /**
- * Plugin Name: iwebCreative Security Agent
- * Description: Agent de surveillance centralisé SecOps (Lecture Seule).
- * Version: 1.0.0
- * Author: Hamza Bourras
+ * ============================================================================
+ * Plugin Name : iwebCreative Security Agent
+ * Rôle        : Sonde Télémétrique, IDS/WAF et Agent de Remédiation (Must-Use)
+ * Description :
+ *    Ce script PHP constitue l'agent distant déployé sur les infrastructures 
+ *    WordPress supervisées. Il opère une double mission critique :
+ *    
+ *    1. Mode "Push" (WAF/IDS) : Intercepte activement les requêtes malveillantes 
+ *       (SQLi, XSS, Scanners, Brute-force, Upload de Web Shells) grâce aux hooks 
+ *       natifs et transmet instantanément les alertes au serveur SOC central.
+ *       
+ *    2. Mode "Pull" (API REST) : Expose des routes sécurisées par vérification 
+ *       cryptographique contre les attaques temporelles (hash_equals). Ces 
+ *       points de terminaison permettent au SOC d'effectuer des pings de santé, 
+ *       d'extraire l'inventaire SBOM, de lancer des scans heuristiques sur les 
+ *       fichiers et d'exécuter la destruction de payloads à distance.
+ * 
+ * Auteur      : Hamza Bourras
+ * Version     : 2.0.0
+ * ============================================================================
  */
 
 // 1. Sécurité absolue : empêcher l'accès direct au fichier

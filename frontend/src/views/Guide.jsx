@@ -1,20 +1,16 @@
-import {
-  BookOpen,
-  ShieldCheck,
-  Server,
-  Activity,
-  PlusCircle,
-  Key,
-  Terminal,
-  Globe,
-  Lock,
-  LayoutDashboard,
-  ShieldAlert,
-  Search,
-  Crosshair,
-  RefreshCw,
-  FileWarning
-} from 'lucide-react';
+/**
+ * ============================================================================
+ * Composant : Guide.jsx
+ * Rôle      : Centre de documentation interactif (Playbook SOC)
+ * Description : 
+ *    Page statique servant de manuel d'utilisation pour les opérateurs de sécurité.
+ *    Elle vulgarise l'architecture hybride (Push/Pull) d'iweb FleetGuard, le processus
+ *    de provisionnement d'un nouveau site et les mécanismes de sécurité internes 
+ *    (Chiffrement Fernet, MFA, Pare-feu applicatif).
+ * ============================================================================
+ */
+
+import { BookOpen, ShieldCheck, Server, Activity, PlusCircle, Key, Terminal, Globe, Lock, LayoutDashboard, ShieldAlert, Search, Crosshair, RefreshCw, FileWarning } from 'lucide-react';
 
 export default function Guide() {
   return (

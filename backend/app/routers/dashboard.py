@@ -1,3 +1,15 @@
+"""
+===============================================================================
+Module      : dashboard.py (Routeur FastAPI)
+Rôle        : Agrégation des statistiques et Centre de Notifications
+Description :
+    Ce routeur fournit les données globales nécessaires à l'affichage du
+    tableau de bord principal. Il calcule en temps réel le score de santé global,
+    le volume d'attaques sur 7 jours (KPI), et gère le flux des notifications 
+    système destinées aux administrateurs (ex: alertes critiques, événements MFA).
+===============================================================================
+"""
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta

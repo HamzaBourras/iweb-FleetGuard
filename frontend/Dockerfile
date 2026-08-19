@@ -1,3 +1,14 @@
+# ===============================================================================
+# Fichier     : Dockerfile
+# Rôle        : Recette de conteneurisation de l'interface utilisateur (React/Vite)
+# Description :
+#    Ce fichier prépare l'environnement d'exécution isolé pour le tableau de bord.
+#    Il utilise une image de base Node.js ultra-légère (Alpine), installe les 
+#    dépendances listées dans le package.json, copie le code source de l'interface, 
+#    et expose le port 5173 pour rendre le serveur Vite accessible depuis 
+#    la machine hôte.
+# ===============================================================================
+
 # On part d'un mini-serveur Linux avec Node.js
 FROM node:20-alpine
 
