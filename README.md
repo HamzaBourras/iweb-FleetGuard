@@ -10,33 +10,46 @@
 Ce projet permet de passer d'une sécurité réactive (site par site) à une posture proactive et centralisée, garantissant l'intégrité des données clients et la réputation de l'agence.
 
 ---
+C'est une excellente déduction ! Puisque tu viens d'ajouter un fichier `.env.example` complet (avec la base de données, le SMTP, etc.), ton ancienne méthode qui ajoutait juste la clé à la fin d'un fichier vide n'est plus adaptée.
+
+Il faut maintenant indiquer aux utilisateurs de copier le fichier d'exemple, puis de générer la clé pour remplacer la valeur par défaut.
+
+Voici la version mise à jour, parfaite et professionnelle, à copier-coller dans ton `README.md` :
+
+```markdown
 ### ⚙️ Installation & Démarrage rapide
 
 1. **Cloner le dépôt :**
-   
-  ```bash
-   git clone [https://github.com/votre-compte/iweb-fleetguard.git](https://github.com/votre-compte/iweb-fleetguard.git)
-   cd iweb-fleetguard
+   ```bash
+   git clone [https://github.com/HamzaBourras/iweb-FleetGuard](https://github.com/HamzaBourras/iweb-FleetGuard)
+   cd iweb-FleetGuard
 
 ```
 
-2. **Configuration de la sécurité (Variables d'environnement) :**
-Pour des raisons de sécurité (Security by Design), la clé de chiffrement maîtresse n'est pas versionnée. Avant de lancer l'infrastructure, vous devez générer la vôtre.
-Créez un fichier `.env` à la racine du projet :
+2. **Configuration de l'environnement (.env) :**
+Par mesure de sécurité (Security by Design), les secrets d'infrastructure ne sont pas versionnés. Un fichier modèle est fourni pour faciliter le déploiement.
+Copiez le fichier d'exemple pour créer votre propre fichier `.env` :
 ```bash
-touch .env
+cp .env.example .env
 
 ```
 
-Générez une clé Fernet (AES) valide et injectez-la dans le fichier `.env` en exécutant cette commande :
+
+*Ouvrez ensuite le fichier `.env` avec votre éditeur pour configurer vos accès PostgreSQL et vos identifiants SMTP.*
+3. **Génération de la clé cryptographique maîtresse :**
+La plateforme nécessite une clé de chiffrement (Fernet/AES) pour sécuriser les jetons de communication avec les agents distants. Générez une clé valide en exécutant cette commande :
 ```bash
-python -c "from cryptography.fernet import Fernet; print(f'ENCRYPTION_KEY={Fernet.generate_key().decode()}')" >> .env
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
 ```
 
-*(Assurez-vous que le fichier `.env` contient bien une ligne du type : `ENCRYPTION_KEY=votreclegénérée...`)*
-3. **Lancement de l'infrastructure :**
+
+*Copiez la chaîne de caractères affichée dans le terminal, et collez-la dans votre fichier `.env` à la ligne `ENCRYPTION_KEY=...*`
+4. **Lancement de l'infrastructure :**
+Une fois l'environnement configuré, démarrez l'ensemble des conteneurs (PostgreSQL, Backend API, Frontend React et Adminer) en arrière-plan :
 ```bash
-docker compose up -d
+docker compose up -d --build
+
 ```
 
 
@@ -80,14 +93,15 @@ Le script écoute silencieusement le cœur de WordPress et utilise un système d
 
 ## 🚀 Installation de l'Agent
 
-Pour déployer l'agent sur un site client :
+Pour garantir l'intégrité de l'infrastructure (Zero-Trust), le jeton d'authentification n'est plus codé en dur dans le plugin, mais injecté directement à la racine du serveur.
 
-1. Accédez aux fichiers du site WordPress via FTP/SFTP ou via votre dépôt Git.
-2. Naviguez vers le répertoire `wp-content`.
-3. Si le dossier `mu-plugins` n'existe pas, créez-le.
-4. Déposez le fichier `iwebcreative-agent.php` dans `wp-content/mu-plugins/`.
-5. Modifiez la constante `IWEB_AGENT_SECRET_TOKEN` dans le fichier pour définir une clé unique.
-6. L'agent est immédiatement actif.
+1. Déclaration : Ajoutez le nouveau site depuis le tableau de bord FleetGuard et copiez le jeton cryptographique généré.
+
+2. Transfert : Connectez-vous au serveur du site client via SFTP et placez le fichier iwebcreative-agent.php dans le répertoire /wp-content/mu-plugins/ (ou /plugins/).
+
+3. Verrouillage Cryptographique : Ouvrez le fichier wp-config.php situé à la racine du site WordPress.
+
+4. Configuration : Ajoutez la ligne define( 'IWEB_AGENT_SECRET_TOKEN', 'VOTRE_JETON_COPIE_ICI' ); juste avant la ligne "That's all, stop editing!".
 
 
 ## 🏗️ Phase 2 : La Tour de Contrôle Centrale (Backend API)
@@ -146,6 +160,14 @@ Le cœur réactif du système (SecOps), conçu pour l'analyse des incidents et l
 * **Flux en Temps Réel :** Réception et affichage asynchrone des *payloads* d'attaques expédiés par les agents WordPress à travers le tunnel sécurisé.
 * **Triage par Criticité :** Les événements sont automatiquement classifiés par niveau de sévérité (Critique, Élevée, Moyenne, Faible) à l'aide de badges visuels stricts pour prioriser la réponse à incident.
 * **Traçabilité Forensique :** Chaque log consigne le type d'attaque (ex: *Brute Force*, *Élévation de privilèges*), le message de l'agent, le timestamp exact, et l'adresse IP de l'attaquant pour faciliter la mise en place de règles de pare-feu (WAF).
+
+### 🔍 4. Console d'Investigation Forensique (Site Details)
+Le module d'analyse profonde et de réponse aux incidents (IR - Incident Response) dédié à un actif spécifique.
+* **Threat Intelligence & SBOM :** Évaluation dynamique de la vétusté des composants. Le système cartographie l'environnement PHP, le noyau WordPress et les extensions. Il signale instantanément les versions obsolètes ou les mises à jour en attente.
+* **Scanner Heuristique & Remédiation :** Lancement d'analyses anti-malware à distance pour détecter les Web Shells ou le code obfusqué. L'analyste peut procéder à la destruction irréversible des *payloads* malveillants ou à leur mise en liste blanche (gestion des faux positifs).
+* **Playbook SecOps Intégré :** Pour chaque alerte interceptée sur le site, le système fournit une analyse détaillée de la menace et propose des actions de remédiation concrètes pour guider l'opérateur.
+* **Gestion Cryptographique (Key Rotation) :** Mécanisme d'urgence permettant de révoquer l'accès d'une cible compromise et de générer un nouveau jeton de communication à la volée, sans perdre l'historique des attaques.
+* **Politique d'Auto-Scan :** Activation ou désactivation de la surveillance asynchrone (tâches CRON de 24h) spécifique à cet environnement.
 
 
 ## ⚔️ Phase 4 : Déploiement en Production & Red Teaming (Simulation d'Attaques)
