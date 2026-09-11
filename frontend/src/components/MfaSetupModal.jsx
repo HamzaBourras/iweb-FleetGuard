@@ -9,50 +9,57 @@
  *    de secours à usage unique pour téléchargement ou copie.
  * ============================================================================
  */
-
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { ShieldCheck, X, RefreshCw, AlertTriangle, Smartphone, Download, Copy, Check } from 'lucide-react';
+import { ShieldCheck, X, RefreshCw, AlertTriangle, Smartphone, Download, Copy, Check, Key } from 'lucide-react';
 
 export default function MfaSetupModal({ onClose, showNotification }) {
+  // Gestion des étapes : 0 = Mot de passe, 1 = QR Code, 2 = Codes de secours
+  const [step, setStep] = useState(0); 
+  
+  // États de données
+  const [password, setPassword] = useState('');
   const [qrUri, setQrUri] = useState('');
   const [secret, setSecret] = useState('');
   const [mfaCode, setMfaCode] = useState('');
-
-  const [isLoading, setIsLoading] = useState(true);
+  const [recoveryCodes, setRecoveryCodes] = useState([]);
+  
+  // États UI
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-
-  // ✨ NOUVEAUX ÉTATS POUR LES CODES DE SECOURS ✨
-  const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [copied, setCopied] = useState(false);
 
-  // 1. Récupération des données MFA au chargement de la modale
-  useEffect(() => {
-    const fetchMfaSetup = async () => {
-      try {
-        const response = await fetch('http://localhost:8000/api/auth/mfa/setup', {
-          method: 'GET',
-          credentials: 'include' // 🛡️ Toujours inclure le cookie HttpOnly
-        });
+  // 1. Soumission du mot de passe pour récupérer le QR Code
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError('');
 
-        if (!response.ok) throw new Error("Impossible de communiquer avec le serveur.");
+    try {
+      const response = await fetch('http://localhost:8000/api/auth/mfa/setup', {
+        method: 'POST', // Modifié en POST
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password })
+      });
 
-        const data = await response.json();
-        setQrUri(data.qr_uri);
-        setSecret(data.secret);
-      } catch (err) {
-        setError("Erreur lors de la génération du QR Code.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+      const data = await response.json();
 
-    fetchMfaSetup();
-  }, []);
+      if (!response.ok) throw new Error(data.detail || "Impossible de générer le QR Code.");
 
-  // 2. Soumission du code MFA pour validation et activation et récupérer les codes de secures
-  const handleSubmit = async (e) => {
+      setQrUri(data.qr_uri);
+      setSecret(data.secret);
+      setStep(1); // On passe à l'affichage du QR Code
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 2. Soumission du code MFA à 6 chiffres pour valider
+  const handleMfaSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError('');
@@ -65,16 +72,13 @@ export default function MfaSetupModal({ onClose, showNotification }) {
         body: JSON.stringify({ code: mfaCode })
       });
 
-      const data = await response.json(); // On parse la réponse pour récupérer les données
+      const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.detail || "Le code est invalide ou a expiré.");
-      }
+      if (!response.ok) throw new Error(data.detail || "Le code est invalide ou a expiré.");
 
       showNotification('success', "L'authentification multifacteur (MFA) est désormais active !");
-
-      // 🚨 AU LIEU DE FERMER, ON AFFICHE LES CODES DE SECOURS :
       setRecoveryCodes(data.recovery_codes);
+      setStep(2); // On passe aux codes de secours
 
     } catch (err) {
       setError(err.message);
@@ -83,8 +87,7 @@ export default function MfaSetupModal({ onClose, showNotification }) {
     }
   };
 
-
-  // 3. Gestion du copier-coller et du téléchargement des codes de secours
+  // 3. Gestion de la copie et du téléchargement
   const handleCopyCodes = () => {
     navigator.clipboard.writeText(recoveryCodes.join('\n'));
     setCopied(true);
@@ -100,9 +103,6 @@ export default function MfaSetupModal({ onClose, showNotification }) {
     element.click();
     document.body.removeChild(element);
   };
-
-
-
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
@@ -125,16 +125,105 @@ export default function MfaSetupModal({ onClose, showNotification }) {
         </div>
 
         <div className="p-6 bg-white">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-              <RefreshCw className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
-              <p className="text-sm font-bold">Génération des clés cryptographiques...</p>
-            </div>
-          ) : recoveryCodes.length > 0 ? (
+          
+          {/* ÉTAPE 0 : VÉRIFICATION DU MOT DE PASSE */}
+          {step === 0 && (
+            <form onSubmit={handlePasswordSubmit} className="space-y-4 animate-fade-in">
+              <div className="p-3 bg-blue-50 text-blue-800 rounded-lg text-sm font-medium border border-blue-100">
+                Par mesure de sécurité, veuillez confirmer votre mot de passe avant de configurer le MFA.
+              </div>
 
-            /* ========================================================= */
-            /* ÉCRAN DES CODES DE SECOURS (APRÈS ACTIVATION RÉUSSIE)     */
-            /* ========================================================= */
+              {error && (
+                <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm font-bold flex items-center gap-2 border border-red-100">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  {error}
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Mot de passe actuel</label>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+                  placeholder="••••••••"
+                  autoFocus
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting || !password}
+                className="w-full mt-4 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md"
+              >
+                {isSubmitting ? <><RefreshCw className="w-4 h-4 animate-spin" /> Vérification...</> : "Continuer"}
+              </button>
+            </form>
+          )}
+
+          {/* ÉTAPE 1 : QR CODE ET CODE MFA */}
+          {step === 1 && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="text-center space-y-3">
+                <div className="inline-flex items-center justify-center p-4 bg-white border-2 border-slate-100 rounded-2xl shadow-sm">
+                  <QRCodeSVG value={qrUri} size={160} level="M" includeMargin={false} />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-600 font-medium">
+                    1. Scannez ce QR Code avec <strong className="text-slate-800">Google Authenticator</strong> ou <strong className="text-slate-800">Authy</strong>.
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-2 font-mono">
+                    Clé manuelle : {secret}
+                  </p>
+                </div>
+              </div>
+
+              <hr className="border-slate-100" />
+
+              <form onSubmit={handleMfaSubmit} className="space-y-4">
+                {error && (
+                  <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm font-bold flex items-center gap-2 border border-red-100">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    {error}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                    <Smartphone className="w-4 h-4" /> 2. Code de confirmation à 6 chiffres
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength="6"
+                    pattern="\d{6}"
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-mono text-center text-xl tracking-widest text-slate-800 placeholder:text-slate-300 shadow-inner"
+                    placeholder="000000"
+                    autoComplete="off"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting || mfaCode.length !== 6}
+                  className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+                >
+                  {isSubmitting ? (
+                    <><RefreshCw className="w-4 h-4 animate-spin" /> Vérification...</>
+                  ) : (
+                    <><ShieldCheck className="w-4 h-4" /> Activer la protection MFA</>
+                  )}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* ÉTAPE 2 : CODES DE SECOURS */}
+          {step === 2 && (
             <div className="space-y-6 animate-fade-in">
               <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl">
                 <h4 className="text-sm font-black text-amber-900 flex items-center gap-2 mb-2">
@@ -143,7 +232,6 @@ export default function MfaSetupModal({ onClose, showNotification }) {
                 </h4>
                 <p className="text-xs text-amber-800 font-medium leading-relaxed">
                   Si vous perdez votre téléphone, ces codes sont le <strong>seul moyen</strong> d'accéder à votre tableau de bord.
-                  Ils ne seront plus jamais affichés. Chaque code ne peut être utilisé qu'une seule fois.
                 </p>
               </div>
 
@@ -178,71 +266,6 @@ export default function MfaSetupModal({ onClose, showNotification }) {
               >
                 J'ai sauvegardé mes codes (Terminer)
               </button>
-            </div>
-          ) : (
-            <div className="space-y-6">
-
-              {/* --- ÉTAPE 1 : QR CODE --- */}
-              <div className="text-center space-y-3">
-                <div className="inline-flex items-center justify-center p-4 bg-white border-2 border-slate-100 rounded-2xl shadow-sm">
-                  {qrUri ? (
-                    <QRCodeSVG value={qrUri} size={160} level="M" includeMargin={false} />
-                  ) : (
-                    <div className="w-[160px] h-[160px] bg-slate-100 rounded-xl flex items-center justify-center">
-                      <AlertTriangle className="w-8 h-8 text-slate-400" />
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm text-slate-600 font-medium">
-                    1. Scannez ce QR Code avec <strong className="text-slate-800">Google Authenticator</strong> ou <strong className="text-slate-800">Authy</strong>.
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-2 font-mono">
-                    Clé manuelle : {secret}
-                  </p>
-                </div>
-              </div>
-
-              <hr className="border-slate-100" />
-
-              {/* --- ÉTAPE 2 : VALIDATION --- */}
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {error && (
-                  <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm font-bold flex items-center gap-2 border border-red-100">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    {error}
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                    <Smartphone className="w-4 h-4" /> 2. Code de confirmation à 6 chiffres
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    maxLength="6"
-                    pattern="\d{6}"
-                    value={mfaCode}
-                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))} // N'accepte que les chiffres
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-mono text-center text-xl tracking-widest text-slate-800 placeholder:text-slate-300 shadow-inner"
-                    placeholder="000000"
-                    autoComplete="off"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isSubmitting || mfaCode.length !== 6}
-                  className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
-                >
-                  {isSubmitting ? (
-                    <><RefreshCw className="w-4 h-4 animate-spin" /> Vérification...</>
-                  ) : (
-                    <><ShieldCheck className="w-4 h-4" /> Activer la protection MFA</>
-                  )}
-                </button>
-              </form>
             </div>
           )}
         </div>

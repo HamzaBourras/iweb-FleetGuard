@@ -112,35 +112,39 @@ def verify_session(admin: models.DashboardAdmin = Depends(get_current_admin)):
         "mfa_enabled": admin.mfa_enabled  # ✨ Le frontend saura immédiatement si le compte est protégé
     }
 
-# --- ROUTE 1 : GÉNÉRATION DU SECRET ET DU QR CODE ---
-@router.get("/mfa/setup")
+# --- ROUTE 1 : GÉNÉRATION DU SECRET ET DU QR CODE (SÉCURISÉ PAR MOT DE PASSE) ---
+@router.post("/mfa/setup") # Attention : C'est un POST maintenant
 def setup_mfa(
+    payload: schemas.RecoveryCodesRequest, # On réutilise ton schéma qui demande un mot de passe
     admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
     """
-    Génère un nouveau secret TOTP pour l'administrateur.
+    Génère un nouveau secret TOTP pour l'administrateur après vérification du mot de passe.
     Retourne l'URI de provisionnement pour générer le QR Code côté frontend.
     """
-    # 1. On génère une clé secrète aléatoire en Base32
+    # 1. Vérification de l'identité (Le correctif de sécurité)
+    if not security.verify_password(payload.password, admin.hashed_password):
+        raise HTTPException(status_code=400, detail="Mot de passe incorrect.")
+
+    # 2. On génère une clé secrète aléatoire en Base32
     secret = pyotp.random_base32()
     
-    # 2. On sauvegarde ce secret dans la base de données
-    # IMPORTANT : On laisse mfa_enabled à False tant qu'il n'a pas validé son premier code
+    # 3. On sauvegarde ce secret dans la base de données
     admin.mfa_secret = secret
     admin.mfa_enabled = False
     db.commit()
     
-    # 3. On crée l'URL compatible avec Google Authenticator / Authy / Microsoft Authenticator
+    # 4. On crée l'URL compatible avec les applications d'authentification
     totp = pyotp.TOTP(secret)
     provisioning_uri = totp.provisioning_uri(
         name=admin.email, 
-        issuer_name="FleetGuard SOC" # C'est le nom qui s'affichera dans l'application mobile
+        issuer_name="FleetGuard SOC"
     )
     
     return {
-        "secret": secret, # Optionnel : à afficher si la caméra du téléphone est cassée
-        "qr_uri": provisioning_uri # À transformer en QR Code côté React
+        "secret": secret, 
+        "qr_uri": provisioning_uri 
     }
 
 # --- ROUTE 2 : VALIDATION ET ACTIVATION DÉFINITIVE ---
