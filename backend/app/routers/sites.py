@@ -8,6 +8,7 @@ Description :
     ainsi que les requêtes actives (Pull) vers les agents distants pour 
     les audits forénsiques (SBOM, Versions) et les scans anti-malware (EDR).
     Il inclut également la logique de remédiation (Destruction de fichiers, Whitelist).
+    et la route de ping pour vérifier la connectivité des agents.
 ===============================================================================
 """
 
@@ -134,8 +135,11 @@ def create_site(
     db.add(nouveau_site)
     db.commit()
     db.refresh(nouveau_site) 
+
+    # 4. Ping vers l'agent pour vérifier la connectivité
+    ping_site_agent(nouveau_site.id, db=db, admin=admin)  
     
-    # 4. On renvoie le token en clair pour l'affichage unique
+    # 5. On renvoie le token en clair pour l'affichage unique
     return {
         "id": nouveau_site.id,
         "site_name": nouveau_site.site_name,
