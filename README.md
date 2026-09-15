@@ -1,6 +1,6 @@
 # iweb FleetGuard 🛡️
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
 ![PHP](https://img.shields.io/badge/php-%3E%3D%207.4-8892BF.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-%3E%3D%205.0-21759b.svg)
 ![Security](https://img.shields.io/badge/SecOps-Active-success.svg)
