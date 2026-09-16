@@ -58,6 +58,13 @@ add_action( 'rest_api_init', function () {
         'callback'            => 'iweb_get_status',
         'permission_callback' => 'iweb_verify_bearer_token',
     ] );
+
+    // ROUTE 5 : Lecture de fichier (Investigation EDR)
+    register_rest_route( 'iwebcreative/v1', '/view-file', [
+        'methods'             => 'POST',
+        'callback'            => 'iweb_view_file_content',
+        'permission_callback' => 'iweb_verify_bearer_token',
+    ] );
 } );
 
 /**
@@ -370,12 +377,45 @@ function iweb_safe_scan_directory( $dir, &$results, $depth = 0 ) {
         if ( is_dir( $path ) ) {
             iweb_safe_scan_directory( $path, $results, $depth + 1 );
         } else {
+            // 1. Liste exhaustive des extensions exécutables et scripts
+            $dangerous_extensions = [
+                'php', 'php3', 'php4', 'php5', 'php7', 'php8', 'phtml', 'pht', 'phar', 'inc',
+                'sh', 'bash', 'zsh', 'pl', 'py', 'cgi',
+                'exe', 'bat', 'cmd', 'ps1', 'vbs',
+                'c', 'cpp', 'h'
+            ];
+
+            $filename = strtolower( basename( $path ) );
+            
+            // ✨ LA LIGNE MANQUANTE EST ICI :
             $ext = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
-            // On traque les extensions exécutables dans un dossier de médias
-            if ( in_array( $ext, ['php', 'phtml', 'php5', 'sh', 'pl', 'py', 'cgi'] ) ) {
+            
+            $is_malicious = false;
+            $threat_type = '';
+
+            // Test A : Fichiers de configuration critiques déposés dans uploads
+            if ( in_array( $filename, ['.htaccess', '.user.ini', 'web.config'], true ) ) {
+                $is_malicious = true;
+                $threat_type = 'Tentative de modification de configuration serveur (.htaccess / .user.ini)';
+            }
+
+            // Test B : Extension finale exécutable
+            elseif ( in_array( $ext, $dangerous_extensions, true ) ) {
+                $is_malicious = true;
+                $threat_type = 'Web Shell ou script exécutable potentiel';
+            }
+
+            // Test C : Double extension (ex: shell.php.png, backdoor.phtml.jpg)
+            elseif ( preg_match( '/\.(php[0-9]?|phtml|phar|sh|pl|py)\.[a-z0-9]+$/i', $filename ) ) {
+                $is_malicious = true;
+                $threat_type = 'Technique d\'évasion par double extension détectée';
+            }
+
+            // Enregistrement si anomalie trouvée
+            if ( $is_malicious ) {
                 $results[] = [
                     'file'     => str_replace( ABSPATH, '', $path ),
-                    'threat'   => 'Web Shell ou script executable potentiel',
+                    'threat'   => $threat_type,
                     'severity' => 'critical'
                 ];
             }
@@ -461,3 +501,37 @@ function iweb_delete_malicious_file( WP_REST_Request $request ) {
     }
 }
 
+
+/**
+ * 11. Module d'Investigation : Lecture d'un fichier à distance
+ */
+function iweb_view_file_content( WP_REST_Request $request ) {
+    $params = $request->get_json_params();
+    $file_path = isset( $params['file_path'] ) ? sanitize_text_field( $params['file_path'] ) : '';
+
+    if ( empty( $file_path ) ) {
+        return new WP_Error( 'missing_param', 'Chemin du fichier manquant.', [ 'status' => 400 ] );
+    }
+
+    // Construction du chemin absolu
+    $absolute_path = ABSPATH . ltrim( $file_path, '/' );
+
+    // Sécurité : Empêcher le Path Traversal (navigation hors du dossier WordPress)
+    $real_path = realpath($absolute_path);
+    if ( $real_path === false || strpos( $real_path, ABSPATH ) !== 0 ) {
+        return new WP_Error( 'forbidden_path', 'Accès refusé : Tentative de lecture non autorisée.', [ 'status' => 403 ] );
+    }
+
+    if ( ! file_exists( $real_path ) || ! is_readable( $real_path ) ) {
+        return new WP_Error( 'not_found', 'Fichier introuvable ou droits de lecture insuffisants.', [ 'status' => 404 ] );
+    }
+
+    // Lecture du fichier (limité aux 100 premiers Ko pour éviter de saturer la mémoire de l'API)
+    $content = file_get_contents( $real_path, false, null, 0, 100000 );
+
+    return rest_ensure_response( [ 
+        'success' => true, 
+        'file_path' => $file_path,
+        'content' => $content 
+    ] );
+}

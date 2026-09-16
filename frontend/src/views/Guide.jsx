@@ -159,7 +159,7 @@ export default function Guide() {
               <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shrink-0">2</div>
               <div>
                 <h4 className="font-bold text-slate-800">Déploiement de l'Agent</h4>
-                <p className="text-sm text-slate-600 mt-1">Sur le serveur cible, placez l'agent dans le dossier <code className="bg-slate-100 px-1 font-mono text-xs text-blue-600">/wp-content/plugins</code> et définissez la constante <code className="bg-slate-100 px-1 font-mono text-xs text-red-600">IWEB_AGENT_SECRET_TOKEN</code> dans le <code className="font-mono text-xs">wp-config.php</code>.</p>
+                <p className="text-sm text-slate-600 mt-1">Sur le serveur cible, placez l'agent dans le dossier <code className="bg-slate-100 px-1 font-mono text-xs text-blue-600">/wp-content/mu-plugins</code> et définissez la constante <code className="bg-slate-100 px-1 font-mono text-xs text-red-600">IWEB_AGENT_SECRET_TOKEN</code> dans le <code className="font-mono text-xs">wp-config.php</code>.</p>
               </div>
             </div>
 

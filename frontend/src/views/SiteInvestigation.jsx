@@ -33,8 +33,11 @@ import {
   Check,
   Key,
   Copy,
-  ShieldCheck
+  ShieldCheck,
+  Eye
 } from 'lucide-react';
+
+import FileInspectionModal from '../components/FileInspectionModal';
 
 export default function SiteInvestigation() {
   // On récupère la fonction envoyée par le Dashboard
@@ -85,6 +88,11 @@ export default function SiteInvestigation() {
   // --- ÉTATS POUR L'UX DE SUPPRESSION ---
   const [fileToDelete, setFileToDelete] = useState(null); // Contient le nom du fichier si la modale est ouverte
   const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: '...' }
+
+  // --- ÉTATS POUR L'INSPECTION DE FICHIER (EDR) ---
+  const [fileToInspect, setFileToInspect] = useState(null); // Le chemin du fichier
+  const [fileContent, setFileContent] = useState(null);     // Le code brut
+  const [isFetchingFile, setIsFetchingFile] = useState(false);
 
   // ÉTATS POUR LA RÉSOLUTION D'ALERTE
   const [alertToResolve, setAlertToResolve] = useState(null); // Contient l'objet alerte si la modale est ouverte
@@ -498,6 +506,35 @@ export default function SiteInvestigation() {
       setShowAutoScanModal(false);
     } finally {
       setIsTogglingAutoScan(false);
+    }
+  };
+
+  // 9. Fonction pour lire le contenu d'un fichier à distance
+  const handleInspectFile = async (filePath) => {
+    setFileToInspect(filePath);
+    setIsFetchingFile(true);
+    setFileContent(null);
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/sites/${id}/view-file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ file_path: filePath })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Impossible de lire le fichier.');
+      }
+
+      const data = await response.json();
+      setFileContent(data.content);
+    } catch (err) {
+      showNotification('error', err.message);
+      setFileToInspect(null);
+    } finally {
+      setIsFetchingFile(false);
     }
   };
 
@@ -1068,6 +1105,16 @@ export default function SiteInvestigation() {
                   {/* Boutons d'action (Whitelist + Destruction) */}
                   <div className="flex flex-wrap items-center gap-2 shrink-0 mt-2 md:mt-0">
 
+                    {/* Bouton Inspecter le code */}
+                    <button
+                      onClick={() => handleInspectFile(file.file)}
+                      title="Inspecter le code source du fichier"
+                      className="bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-200 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2 flex-1 md:flex-none justify-center"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span className="whitespace-nowrap">Inspecter</span>
+                    </button>
+
                     {/* Bouton Ignorer / Faux Positif */}
                     <button
                       onClick={() => initiateWhitelist(file.file)}
@@ -1498,6 +1545,18 @@ export default function SiteInvestigation() {
           </div>
         </div>
       )}
+
+      {/* ========================================================= */}
+      {/* MODALE D'INSPECTION DE CODE (INVESTIGATION EDR)             */}
+      {/* ========================================================= */}
+      <FileInspectionModal
+        fileToInspect={fileToInspect}
+        fileContent={fileContent}
+        isFetchingFile={isFetchingFile}
+        onClose={() => setFileToInspect(null)}
+        onWhitelist={initiateWhitelist}
+        onDelete={initiateDelete}
+      />
     </div>
   );
 }

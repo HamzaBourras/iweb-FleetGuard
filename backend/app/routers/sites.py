@@ -581,6 +581,48 @@ def whitelist_site_file(
         "message": "Fichier ajouté à la liste blanche d'exceptions avec succès."
     }
 
+# --- ROUTE : VISUALISER LE CONTENU D'UN FICHIER (INVESTIGATION EDR) ---
+@router.post("/{site_id:int}/view-file")
+async def view_malicious_file(
+    site_id: int, 
+    payload: schemas.DeleteFileRequest, # On réutilise ce schéma car il contient juste "file_path"
+    db: Session = Depends(get_db)
+):
+    try:
+        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+        if not site:
+            raise HTTPException(status_code=404, detail="Cible introuvable.")
+
+        base_url = site.url.rstrip('/')
+        view_endpoint = f"{base_url}/wp-json/iwebcreative/v1/view-file"
+        
+        try:
+            decrypted_token = security.decrypt_token(site.secret_token)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Erreur de déchiffrement du jeton.")
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                view_endpoint,
+                headers={"Authorization": f"Bearer {decrypted_token}"},
+                json={"file_path": payload.file_path}
+            )
+            
+            if response.status_code == 401:
+                raise HTTPException(status_code=401, detail="Jeton de sécurité invalide.")
+            
+            if response.status_code != 200:
+                err_data = response.json()
+                err_msg = err_data.get('message', 'Échec de la lecture sur le serveur distant.')
+                raise HTTPException(status_code=response.status_code, detail=err_msg)
+
+        return response.json()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # =====================================================================
 # SECTIONS : GESTION DES ALERTES LIÉES AU SITE
 # =====================================================================
