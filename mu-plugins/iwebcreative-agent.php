@@ -322,10 +322,15 @@ add_action( 'init', function() {
  */
 add_filter( 'wp_handle_upload_prefilter', function( $file ) {
     $filename = strtolower( $file['name'] );
-    // WP bloque le PHP par défaut, mais les attaquants tentent des extensions doubles ou alternatives
-    if ( preg_match( '/\.(php|phtml|php5|shtml|exe|sh|pl|cgi|py)$/', $filename ) ) {
+    
+    // Liste des extensions interdites formatée pour une Regex (séparées par |)
+    $regex_pattern = '/\.(php|php3|php4|php5|php7|php8|phtml|pht|phar|inc|sh|bash|zsh|pl|py|cgi|exe|bat|cmd|ps1|vbs|c|cpp|h)(\.|$)/';
+    
+    // Si le fichier contient une de ces extensions (ex: shell.php ou shell.php.png)
+    if ( preg_match( $regex_pattern, $filename ) ) {
         iweb_log_security_event( 'malicious_upload_attempt', 'critical', "Tentative d'upload d'un fichier potentiellement executable (WebShell) : {$filename}" );
     }
+    
     return $file;
 });
 
@@ -352,6 +357,40 @@ add_action( 'wp_login', function( $user_login, $user ) {
         update_option( 'iweb_last_admin_login_ip', $ip );
     }
 }, 10, 2 );
+
+/**
+ * L. File Integrity Monitoring (FIM) : Surveillance temps réel de wp-config.php
+ * Compare la date de modification du fichier à chaque chargement pour détecter
+ * une altération furtive (ex: injection de code obfusqué).
+ */
+add_action( 'init', function() {
+    $wp_config_path = ABSPATH . 'wp-config.php';
+    if ( ! file_exists( $wp_config_path ) ) {
+        $wp_config_path = dirname( ABSPATH ) . '/wp-config.php';
+    }
+
+    if ( file_exists( $wp_config_path ) ) {
+        // filemtime() est ultra rapide car PHP met en cache les stats système
+        $current_mtime = filemtime( $wp_config_path );
+        $stored_mtime  = get_option( 'iweb_wpconfig_mtime' );
+
+        if ( $stored_mtime ) {
+            if ( $current_mtime > $stored_mtime ) {
+                // Le fichier a été modifié depuis la dernière vérification !
+                iweb_log_security_event( 
+                    'file_integrity_compromised', 
+                    'critical', 
+                    "Alerte FIM (Integrite compromise) : Le fichier wp-config.php a ete altere !" 
+                );
+                // On met à jour l'option pour ne pas spammer le SOC à chaque visite
+                update_option( 'iweb_wpconfig_mtime', $current_mtime );
+            }
+        } else {
+            // Initialisation silencieuse lors du premier lancement de l'agent
+            update_option( 'iweb_wpconfig_mtime', $current_mtime );
+        }
+    }
+});
 
 
 // ========================================================================
@@ -408,7 +447,7 @@ function iweb_safe_scan_directory( $dir, &$results, $depth = 0 ) {
             // Test C : Double extension (ex: shell.php.png, backdoor.phtml.jpg)
             elseif ( preg_match( '/\.(php[0-9]?|phtml|phar|sh|pl|py)\.[a-z0-9]+$/i', $filename ) ) {
                 $is_malicious = true;
-                $threat_type = 'Technique d\'évasion par double extension détectée';
+                $threat_type = 'Technique d\'évasion par double extension d\'étect\'ée';
             }
 
             // Enregistrement si anomalie trouvée
@@ -448,7 +487,7 @@ function iweb_run_malware_scan() {
         if ( $content && preg_match( '/(eval\s*\(|base64_decode\s*\(|str_rot13\s*\()/i', $content ) ) {
             $malicious_files[] = [
                 'file'     => 'wp-config.php',
-                'threat'   => 'Code obfusqué détecté (Injection de Backdoor probable)',
+                'threat'   => 'Code obfusque detecte (Injection de Backdoor probable)',
                 'severity' => 'critical'
             ];
         }

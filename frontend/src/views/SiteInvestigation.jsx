@@ -595,12 +595,16 @@ export default function SiteInvestigation() {
         action: "1. Identifiez l'URI ciblée dans les logs. 2. Mettez à jour le plugin ou le thème visé. 3. Envisagez de blacklister l'IP source au niveau du pare-feu périmétrique (ex: Cloudflare)."
       },
       'malicious_upload_attempt': {
-        danger: "Tentative d'exécution de code à distance (RCE). L'attaquant a essayé de téléverser un Web Shell (Cheval de Troie) sur le serveur.",
+        danger: "Tentative d'exécution de code à distance (RCE). L'attaquant a essayé de téléverser un fichier exécutable sur le serveur.",
         action: "1. Vérifiez les permissions (CHMOD) du dossier 'wp-content/uploads' (doit être 755). 2. Ajoutez un fichier .htaccess pour interdire l'exécution de PHP dans ce répertoire."
       },
       'file_editor_accessed': {
         danger: "Activité de post-exploitation. L'attaquant utilise l'éditeur interne de WordPress pour injecter du code persistant dans le cœur du site sans passer par le FTP.",
         action: "1. Désactivez l'éditeur de fichiers en ajoutant \"define('DISALLOW_FILE_EDIT', true);\" dans le wp-config.php. 2. Inspectez les dernières modifications de code."
+      },
+      'file_integrity_compromised': {
+        danger: "Altération critique du système (File Integrity Monitoring). Le fichier wp-config.php a été modifié. Un attaquant a potentiellement injecté du code persistant (Backdoor) ou exfiltré les identifiants de la base de données.",
+        action: "1. Utilisez l'outil d'inspection pour isoler le code malveillant ajouté. 2. Restaurez immédiatement le fichier depuis une sauvegarde saine. 3. Renouvelez les clés de sécurité (SALT keys) et modifiez le mot de passe de la base de données."
       },
       'scanner_detected': {
         danger: "Phase de reconnaissance. Un robot automatisé (Nmap, WPScan, SQLMap) cartographie la surface d'attaque et cherche des CVE connues.",
