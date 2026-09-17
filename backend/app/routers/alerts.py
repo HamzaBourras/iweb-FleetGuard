@@ -116,7 +116,6 @@ def receive_agent_alerts(
         "status": "success",
         "message": f"{len(payload.security_events)} alerte(s) enregistrée(s). Score de santé mis à jour à {nouveau_score}/100."
     }
-
 # --- ROUTE DE RÉCUPÉRATION DES ALERTES POUR LE DASHBOARD ---
 @router.get("")
 def get_all_alerts(
@@ -142,7 +141,8 @@ def get_all_alerts(
             "message": alerte.message,
             "ip_address": alerte.ip_address,
             "timestamp": alerte.timestamp,
-            "site_id": alerte.site_id
+            "site_id": alerte.site_id,
+            "status": alerte.status  
         })
 
     return resultats

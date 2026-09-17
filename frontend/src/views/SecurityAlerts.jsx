@@ -23,6 +23,7 @@ export default function SecurityAlerts() {
   // ✨ NOUVEAUX ÉTATS : Recherche et Filtrage
   const [searchQuery, setSearchQuery] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all'); // 'all', 'critical', 'high', 'medium', 'low'
+  const [statusFilter, setStatusFilter] = useState('active'); // <-- NOUVEL ÉTAT PAR DÉFAUT
 
   const [alertPage, setAlertPage] = useState(1);
   const alertsPerPage = 10;
@@ -40,7 +41,14 @@ export default function SecurityAlerts() {
     // 2. Filtrage par niveau de sévérité
     const matchesSeverity = severityFilter === 'all' || (alert.severity || '').toLowerCase() === severityFilter;
 
-    return matchesSearch && matchesSeverity;
+    // 3. Filtrage par statut de résolution (NOUVEAU)
+    const isResolved = alert.status === 'resolved';
+    const matchesStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'resolved' && isResolved) ||
+      (statusFilter === 'active' && !isResolved);
+
+    return matchesSearch && matchesSeverity && matchesStatus;
   });
 
   // ✨ MISE À JOUR : Pagination basée sur les résultats filtrés
@@ -74,6 +82,7 @@ export default function SecurityAlerts() {
 
         const data = await response.json();
         setAlerts(data);
+
       } catch (err) {
         setError(err.message);
       } finally {
@@ -138,8 +147,20 @@ export default function SecurityAlerts() {
         <div>
           <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2 md:gap-3">
             Journal des Alertes
-            <span className="bg-red-100 text-red-700 py-0.5 md:py-1 px-2 md:px-3 rounded-full text-[10px] md:text-xs font-black tracking-widest ring-1 ring-red-500/20 shadow-sm shrink-0">
-              {alerts.length} <span className="hidden sm:inline">ALERTES</span>
+            <span
+              className={`py-0.5 md:py-1 px-2 md:px-3 rounded-full text-[10px] md:text-xs font-black tracking-widest ring-1 shadow-sm shrink-0 ${statusFilter === 'active'
+                  ? 'bg-red-100 text-red-700 ring-red-500/20'
+                  : statusFilter === 'resolved'
+                    ? 'bg-emerald-100 text-emerald-700 ring-emerald-500/20'
+                    : 'bg-blue-100 text-blue-700 ring-blue-500/20'
+                }`}
+            >
+              {filteredAlerts.length}{" "}
+              <span className="hidden sm:inline">
+                {statusFilter === 'active' ? 'ALERTES NON RÉSOLUES' :
+                  statusFilter === 'resolved' ? 'ALERTES RÉSOLUES' :
+                    'ALERTES TOTALES'}
+              </span>
             </span>
           </h2>
           <p className="text-slate-500 text-xs md:text-sm mt-1">Flux d'analyse iwebCreative en temps réel.</p>
@@ -161,6 +182,7 @@ export default function SecurityAlerts() {
 
       {/* --- BARRE DE RECHERCHE ET FILTRES --- */}
       <div className="flex flex-col sm:flex-row gap-3">
+        {/* Barre de recherche */}
         <div className="relative flex-1">
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
             <Search className="h-5 w-5 text-slate-400" />
@@ -173,7 +195,7 @@ export default function SecurityAlerts() {
             className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl md:rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm font-semibold text-slate-700 placeholder:text-slate-400 placeholder:font-medium shadow-sm"
           />
         </div>
-
+        {/* Filtre de sévérité */}
         <div className="relative min-w-[220px]">
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
             <Filter className="h-5 w-5 text-slate-400" />
@@ -187,7 +209,26 @@ export default function SecurityAlerts() {
             <option value="critical">Critique</option>
             <option value="high">Élevée</option>
             <option value="medium">Moyenne</option>
-            <option value="low">Basse / Info</option>
+            <option value="low">Basse</option>
+          </select>
+          <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+            <ChevronDown className="h-4 w-4 text-slate-400" />
+          </div>
+        </div>
+
+        {/*Filtre de Statut */}
+        <div className="relative min-w-[220px]">
+          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+            <CheckCircle2 className="h-5 w-5 text-slate-400" />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setAlertPage(1); }}
+            className="w-full pl-12 pr-10 py-3 bg-white border border-slate-200 rounded-xl md:rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm font-bold text-slate-700 shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="active">Non résolues (Actives)</option>
+            <option value="resolved">Résolues (Archivées)</option>
+            <option value="all">Toutes les alertes</option>
           </select>
           <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
             <ChevronDown className="h-4 w-4 text-slate-400" />
