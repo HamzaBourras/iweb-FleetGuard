@@ -12,21 +12,17 @@ Description :
 ===============================================================================
 """
 
-import time
 import asyncio
 from datetime import datetime
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter
 from sqlalchemy.orm import Session
-from apscheduler.schedulers.background import BackgroundScheduler
+# ✨ CORRECTION : Utilisation du planificateur asynchrone natif
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 # Imports internes
 import app.models.models as models
-import app.security.security as security
 from app.database import SessionLocal
-from app.dependencies import get_db
-
-# On importe les fonctions de scan depuis le routeur des sites
 from app.routers.sites import scan_site, run_malware_scan, ping_site_agent
 
 router = APIRouter(
@@ -34,40 +30,34 @@ router = APIRouter(
     tags=["Agent Distant & Tâches Automatiques"]
 )
 
-
-# --- TÂCHE 1 : LE PING LÉGER VERS L'AGENT POUR VERFIER SON STATUT (Toutes les 2 heures) ---
-def run_hourly_pings():
+# --- TÂCHE 1 : LE PING LÉGER VERS L'AGENT ---
+async def run_hourly_pings():
     print("🤖 [Scheduler] Lancement du ping léger de tous les sites...")
     db = SessionLocal()
     try:
         tous_les_sites = db.query(models.ClientSite).all()
         for site in tous_les_sites:
             try:
-                # On appelle le ping en mode synchrone/asynchrone
-                asyncio.run(ping_site_agent(site_id=site.id, db=db, admin=None))
+                # On await directement la fonction au lieu de asyncio.run()
+                await ping_site_agent(site_id=site.id, db=db, admin=None)
             except Exception:
-                pass # Si le site est éteint, on ignore pour passer au suivant
+                pass 
             
-            time.sleep(1) # Petite pause réseau
+            # Pause non bloquante pour laisser respirer l'Event Loop
+            await asyncio.sleep(1) 
     except Exception as e:
         print(f"🚨 [Scheduler] Erreur lors des pings : {str(e)}")
     finally:
         db.close()
 
 
+# --- TÂCHE 2 : LES SCANS LOURDS AUTOMATIQUES ---
+scheduler = AsyncIOScheduler()
 
-# --- TÂCHE 2 : LES SCANS LOURDS () (Toutes les 24h ) ---
-scheduler = BackgroundScheduler()
-
-def run_automated_scans():
-    """
-    Fonction exécutée en tâche de fond. 
-    Elle ouvre une session BDD séparée car elle tourne hors du contexte web classique.
-    """
+async def run_automated_scans():
     print("🤖 [Scheduler] Vérification des scans automatiques en attente...")
     db = SessionLocal()
     try:
-        # On cherche tous les sites avec auto_scan activé
         sites_to_scan = db.query(models.ClientSite).filter(models.ClientSite.auto_scan_enabled == True).all()
         
         for site in sites_to_scan:
@@ -82,44 +72,49 @@ def run_automated_scans():
             if needs_scan:
                 print(f"🔄 [Scheduler] Démarrage du scan automatique pour le site #{site.id}...")
                 
-                # Exécution des fonctions de scan asynchrones depuis ce thread synchrone
-                asyncio.run(scan_site(
-                    site_id=site.id, 
-                    admin=None, 
-                    db=db
-                ))
+                # Exécution asynchrone native
+                await scan_site(site_id=site.id, admin=None, db=db)
                 
-                asyncio.run(run_malware_scan(
+                await run_malware_scan(
                     site_id=site.id, 
                     background_tasks=None, 
                     admin=None, 
                     db=db
-                ))
+                )
                 
                 print(f"✅ [Scheduler] Scan terminé pour le site #{site.id}.")
-
-                # On force le backend à souffler pendant 5 secondes avant d'attaquer le site suivant
-                time.sleep(5)
+                await asyncio.sleep(5)
                 
     except Exception as e:
         print(f"🚨 [Scheduler] Erreur critique : {str(e)}")
     finally:
         db.close()
 
-# On attache le planificateur au cycle de vie du Routeur
-@router.on_event("startup")
-# On attache le planificateur au cycle de vie du Routeur
+
 @router.on_event("startup")
 def start_scheduler():
-    # On vérifie si le planificateur ne tourne pas déjà pour éviter le crash avec l'auto-reload d'Uvicorn
     if not scheduler.running:
-        # 1. Le Ping léger exécuté toutes les 2 heures
-        scheduler.add_job(run_hourly_pings, IntervalTrigger(hours=2))
+        # misfire_grace_time augmenté pour éviter l'annulation si le serveur est en charge
+        # max_instances=1 empêche le chevauchement si un scan est plus long que l'intervalle
         
-        # 2. Les scans lourds vérifiés toutes les heures (qui se déclencheront selon leur propre fréquence de 12h/24h)
-        scheduler.add_job(run_automated_scans, IntervalTrigger(hours=1))
+        # Exemple de test à 10 secondes (à remettre à 2h en production via hours=2)
+        scheduler.add_job(
+            run_hourly_pings, 
+            IntervalTrigger(hours=2), 
+            misfire_grace_time=60, 
+            max_instances=1
+        )
+        
+        # Scans lourds vérifiés toutes les heures
+        scheduler.add_job(
+            run_automated_scans, 
+            IntervalTrigger(hours=1), 
+            misfire_grace_time=300, 
+            max_instances=1
+        )
+        
         scheduler.start()
-        print("⏱️ Planificateur de tâches (APScheduler) démarré.")
+        print("⏱️ Planificateur de tâches (AsyncIOScheduler) démarré.")
 
 @router.on_event("shutdown")
 def stop_scheduler():

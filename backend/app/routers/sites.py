@@ -247,11 +247,11 @@ def get_site_status(
             try:
                 derniere_vue = datetime.fromisoformat(derniere_vue.replace("Z", "+00:00"))
             except ValueError:
-                derniere_vue = maintenant
+                raise HTTPException(status_code=500, detail="Erreur de format de date pour last_seen.")
 
         diff = maintenant - derniere_vue
         
-        if diff.total_seconds() < 7200:
+        if diff.total_seconds() < 7200:  # 2 heures
             current_status = "actif"
         else:
             current_status = "injoignable"

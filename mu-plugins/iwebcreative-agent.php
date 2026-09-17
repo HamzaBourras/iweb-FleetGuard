@@ -169,7 +169,8 @@ function iweb_get_status() {
     // Répond instantanément.
     return rest_ensure_response( [
         'status'    => 'alive',
-        'timestamp' => current_time( 'mysql' )
+        'timestamp' => current_time( 'mysql' ),
+        'status_code' => 200
     ] );
 }
 
