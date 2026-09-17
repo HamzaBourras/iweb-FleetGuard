@@ -674,7 +674,6 @@ async def resolve_security_alert(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # --- SYSTÈME DE CACHE POUR LA THREAT INTELLIGENCE ---
 # Évite d'interroger les API externes à chaque requête (Cache valide 12 heures)
 THREAT_INTEL_CACHE = {
@@ -698,7 +697,10 @@ async def get_threat_intelligence(admin: models.DashboardAdmin = Depends(get_cur
         
     # 2. Si le cache est vide ou expiré, on interroge les sources officielles
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        # ✨ AJOUT : User-Agent personnalisé pour contourner le blocage des API publiques
+        headers = {"User-Agent": "iwebCreative-FleetGuard-SOC/2.0"}
+
+        async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
             # Récupération de la version WordPress
             wp_res = await client.get("https://api.wordpress.org/core/version-check/1.7/")
             wp_res.raise_for_status()
@@ -728,7 +730,16 @@ async def get_threat_intelligence(admin: models.DashboardAdmin = Depends(get_cur
             return intel_data
             
     except Exception as e:
-        # Filet de sécurité : en cas de coupure internet du serveur, on renvoie le vieux cache s'il existe
+        # ✨ AJOUT : Affiche l'erreur exacte dans le terminal FastAPI pour le débogage
+        print(f"⚠️ Erreur API Threat Intel : {str(e)}") 
+
+        # Filet de sécurité 1 : Retourner le cache obsolète s'il existe
         if THREAT_INTEL_CACHE["data"]:
             return THREAT_INTEL_CACHE["data"]
-        raise HTTPException(status_code=503, detail="Service de Threat Intelligence temporairement indisponible.")
+            
+        # ✨ Filet de sécurité 2 : Fallback de résilience pour éviter le crash React
+        return {
+            "wp": "", 
+            "phpLatest": "",
+            "activePhpCycles": []
+        }
