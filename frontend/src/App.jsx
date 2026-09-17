@@ -19,6 +19,7 @@ import Profile from './views/Profile';
 import Overview from './views/Overview';
 import SitesList from './views/SitesList';
 import SecurityAlerts from './views/SecurityAlerts';
+import ResetPassword from './views/ResetPassword';
 
 import PublicRoute from './router/PublicRoute'; 
 import ProtectedRoute from './router/ProtectedRoute';
@@ -43,14 +44,14 @@ export default function App() {
           {/* L'attribut "index" signifie que c'est la vue par défaut si on va sur /dashboard */}
           <Route index element={<Overview />} />
           
-          {/* Les sous-routes (ex: /dashboard/sites) */}
+          
           <Route path="sites" element={<SitesList />} />
           <Route path="sites/:id" element={<SiteInvestigation />} /> {/* ✨ NOUVELLE ROUTE */}
           <Route path="alerts" element={<SecurityAlerts />} />
-          {/* ✨ 2. On ajoute la route pour le guide */}
           <Route path="guide" element={<Guide />} />
           <Route path="profile" element={<Profile />} />
         </Route>
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Redirection automatique par défaut */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

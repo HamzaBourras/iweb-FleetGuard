@@ -13,7 +13,7 @@ Description :
 """
 
 import bcrypt
-from jose import jwt
+from jose import jwt, JWTError
 from datetime import datetime, timedelta
 import os
 from cryptography.fernet import Fernet
@@ -62,11 +62,33 @@ def get_password_hash(password):
 # ---------------------------------------------------------
 # 4. Fonction de création du Token JWT
 # ---------------------------------------------------------
-def create_access_token(data: dict):
+def create_access_token(data: dict, expires_delta: timedelta = None):
     """Génère le badge d'accès cryptographique (JWT)"""
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
     
+    # ✨ NOUVEAU : Si une durée spécifique est demandée, on l'utilise
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        
+    to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+# ---------------------------------------------------------
+# 5. Fonction de vérification et décodage du Token JWT
+# ---------------------------------------------------------
+def decode_access_token(token: str):
+    """
+    Déchiffre le badge JWT et vérifie cryptographiquement sa signature.
+    Rejette automatiquement les jetons expirés ou falsifiés.
+    """
+    try:
+        # jwt.decode vérifie automatiquement la signature avec SECRET_KEY et l'expiration (exp)
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        # Retourne None si la signature est mauvaise, si le token est expiré, ou s'il est malformé
+        return None

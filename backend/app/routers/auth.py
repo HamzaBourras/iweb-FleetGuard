@@ -14,8 +14,9 @@ import os
 import json
 import secrets
 import pyotp
-from fastapi import APIRouter, Depends, HTTPException, Response, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Response, BackgroundTasks, Request
 from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
 
 # Import des modèles, schémas et utilitaires de sécurité
 import app.models.models as models
@@ -32,22 +33,51 @@ router = APIRouter(
     tags=["Authentification"]
 )
 
+# Dictionnaire en mémoire pour le Rate Limiting { "ip_address": [timestamp1, timestamp2, ...] }
+FAILED_LOGIN_ATTEMPTS = {}
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_TIME = timedelta(minutes=15)
+
+
 # --- ROUTE DE CONNEXION ---
 @router.post("/login")
 def login_admin(
+    request: Request,
     credentials: schemas.AdminLogin, 
     response: Response, 
     db: Session = Depends(get_db)
 ):
-    # 1. On cherche l'administrateur par son email
+    client_ip = request.client.host
+    now = datetime.utcnow()
+
+    # 1. VÉRIFICATION DU RATE LIMITING
+    if client_ip in FAILED_LOGIN_ATTEMPTS:
+        # Nettoie les anciennes tentatives hors de la fenêtre de temps
+        attempts = [t for t in FAILED_LOGIN_ATTEMPTS[client_ip] if now - t < LOCKOUT_TIME]
+        FAILED_LOGIN_ATTEMPTS[client_ip] = attempts
+        
+        if len(attempts) >= MAX_LOGIN_ATTEMPTS:
+            raise HTTPException(
+                status_code=429, 
+                detail="Trop de tentatives échouées. Compte verrouillé temporairement (15 min)."
+            )
+
+    # 2. On cherche l'administrateur par son email
     admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == credentials.email).first()
     
-    # 2. On vérifie si le compte existe et si le mot de passe correspond au hash
+    # 3. Vérification avec enregistrement de l'échec pour le Rate Limit
     if not admin or not security.verify_password(credentials.password, admin.hashed_password):
+        FAILED_LOGIN_ATTEMPTS.setdefault(client_ip, []).append(now) # ✨ Enregistre l'échec
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
     
     if admin.is_active == 0:
         raise HTTPException(status_code=403, detail="Ce compte a été désactivé")
+
+    # Réinitialisation des compteurs d'échec
+    if client_ip in FAILED_LOGIN_ATTEMPTS:
+        del FAILED_LOGIN_ATTEMPTS[client_ip]
+    
+    
 
     # ✨ 3. VERROU MFA (MULTI-FACTOR AUTHENTICATION) ✨
     if admin.mfa_enabled:
@@ -306,5 +336,72 @@ def change_password(
         type_alerte="Mot de passe modifié",
         message_alerte="Le mot de passe de votre compte d'administration a été modifié avec succès. Si vous n'êtes pas à l'origine de cette action, votre compte est potentiellement compromis."
     )
+
+    return {"message": "Votre mot de passe a été modifié avec succès."}
+
+# --- ROUTE : DEMANDE DE RÉINITIALISATION (FORGOT PASSWORD) ---
+@router.post("/forgot-password")
+def forgot_password(
+    payload: schemas.ForgotPasswordRequest, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db)
+):
+    try:
+        admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == payload.email).first()
+        
+        if admin:
+            # ✨ SÉCURITÉ : Empreinte du mot de passe actuel
+            pwd_fingerprint = admin.hashed_password[-10:] if admin.hashed_password else "none"
+
+            # Création avec le rôle, l'empreinte, et une durée stricte de 30 minutes
+            reset_token = security.create_access_token(
+                data={
+                    "sub": admin.email, 
+                    "role": "reset_password",
+                    "fingerprint": pwd_fingerprint
+                },
+                expires_delta=timedelta(minutes=30)
+            )
+            
+            reset_link = f"http://localhost:5173/reset-password?token={reset_token}"
+            
+            background_tasks.add_task(
+                send_soc_email,
+                destinataire=admin.email,
+                sujet="Demande de réinitialisation de mot de passe",
+                type_alerte="Sécurité Compte",
+                message_alerte=f"Cliquez sur ce lien pour configurer un nouveau mot de passe (valide 30 min) : {reset_link}"
+            )
+
+        return {"message": "Si cette adresse existe, un email contenant les instructions a été envoyé."}
+        
+    except Exception as e:
+        import traceback
+        print("\n🚨 ERREUR FORGOT PASSWORD 🚨\n", traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Erreur interne du serveur.")
+    
+# --- ROUTE : VALIDATION DU NOUVEAU MOT DE PASSE ---
+@router.post("/reset-password")
+def reset_password(payload: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
+    # 1. Décodage et vérification de la signature
+    decoded_data = security.decode_access_token(payload.token) 
+    
+    if not decoded_data or decoded_data.get("role") != "reset_password":
+        raise HTTPException(status_code=400, detail="Lien invalide ou expiré.")
+        
+    admin_email = decoded_data.get("sub")
+    admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == admin_email).first()
+    
+    if not admin:
+        raise HTTPException(status_code=404, detail="Compte introuvable.")
+
+    # ✨ 2. SÉCURITÉ : VÉRIFICATION DE L'USAGE UNIQUE
+    current_fingerprint = admin.hashed_password[-10:] if admin.hashed_password else "none"
+    if decoded_data.get("fingerprint") != current_fingerprint:
+        raise HTTPException(status_code=400, detail="Ce lien de réinitialisation a déjà été utilisé.")
+
+    # 3. Validation réussie : on écrase l'ancien mot de passe
+    admin.hashed_password = security.get_password_hash(payload.new_password)
+    db.commit()
 
     return {"message": "Votre mot de passe a été modifié avec succès."}
