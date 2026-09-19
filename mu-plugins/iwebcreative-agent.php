@@ -122,7 +122,7 @@ function iweb_get_health_data() {
     $last_admin_time = get_option( 'iweb_last_admin_login_time', null );
     $last_admin_ip = get_option( 'iweb_last_admin_login_ip', null );
     
-    // ✨ NOUVEAU : On interroge WordPress pour connaître les mises à jour en attente
+    //  NOUVEAU : On interroge WordPress pour connaître les mises à jour en attente
     wp_update_plugins(); // Force WP à vérifier (optionnel, mais garantit des données fraîches)
     $update_plugins = get_site_transient( 'update_plugins' );
     
@@ -131,7 +131,7 @@ function iweb_get_health_data() {
     foreach ( $all_plugins as $plugin_path => $plugin_data ) {
         $is_active = in_array( $plugin_path, $active_plugins_list, true );
         
-        // ✨ NOUVEAU : Vérification de la disponibilité d'une mise à jour
+        //  NOUVEAU : Vérification de la disponibilité d'une mise à jour
         $has_update = isset( $update_plugins->response[ $plugin_path ] );
         $new_version = $has_update ? $update_plugins->response[ $plugin_path ]->new_version : null;
         
@@ -197,7 +197,7 @@ function iweb_log_security_event( $event_type, $severity, $message ) {
 
     // --- 2. TRANSMISSION TEMPS RÉEL AU SOC FASTAPI ---
     
-    // ✨ CORRECTION : On vérifie si la constante existe pour éviter un Crash (Fatal Error)
+    //  CORRECTION : On vérifie si la constante existe pour éviter un Crash (Fatal Error)
     $token = defined( 'IWEB_AGENT_SECRET_TOKEN' ) ? IWEB_AGENT_SECRET_TOKEN : '';
 
     // Si le token n'est pas défini dans wp-config, on n'envoie pas la requête externe
@@ -283,7 +283,7 @@ add_action( 'after_password_reset', function( $user, $new_pass ) {
 add_action( 'init', function() {
     $user_agent = isset( $_SERVER['HTTP_USER_AGENT'] ) ? $_SERVER['HTTP_USER_AGENT'] : '';
     // Expression régulière contenant les signatures des scanners les plus connus
-    $bad_agents_regex = '/(?:nmap|sqlmap|nikto|wpscan|dirbuster|acunetix|masscan|hydra)/i';
+    $bad_agents_regex = '/(?:nmap|sqlmap|nikto|wpscan|dirbuster|dirb|gobuster|ffuf|acunetix|masscan|hydra|zgrab|zmeu|nuclei|nessus|openvas|qualys|burpcollaborator|zaproxy|python-requests|go-http-client|libwww-perl|java\/[0-9])/i';
 
     if ( preg_match( $bad_agents_regex, $user_agent ) ) {
         iweb_log_security_event( 'scanner_detected', 'high', "Scanner automatise detecte via User-Agent : " . sanitize_text_field($user_agent) );
@@ -300,22 +300,32 @@ add_action( 'init', function() {
 
     // Signatures d'attaques classiques (SQLi, XSS, Path Traversal LFI)
     $bad_patterns = [
-        '/(?:union\s+all\s+select|concat\s*\(|information_schema|waitfor\s+delay)/i', // SQL Injection
-        '/(?:<script>|javascript:|onerror=|onload=)/i',                               // XSS
-        '/(?:\.\.\/|\.\.\\\\|\/etc\/passwd)/i'                                        // Path Traversal / LFI
+        // 1. SQL Injection (SQLi) : Cible MySQL, PostgreSQL, MSSQL et Oracle
+        '/(?:union\s+(?:all\s+)?select|concat\s*\(|information_schema|waitfor\s+delay|sleep\s*\(|benchmark\s*\(|sys\.|extractvalue\s*\(|updatexml\s*\(|load_file\s*\(|into\s+(?:dump|out)file|pg_sleep|dbms_pipe)/i',
+        
+        // 2. Cross-Site Scripting (XSS) : Cible le vol de session et l'exécution JavaScript
+        '/(?:<script.*?>|javascript:|onerror\s*=|onload\s*=|onmouseover\s*=|onfocus\s*=|prompt\s*\(|alert\s*\(|confirm\s*\(|eval\s*\(|document\.cookie|document\.write|<svg.*onload)/i',
+        
+        // 3. Path Traversal & Local/Remote File Inclusion (LFI/RFI) : Cible la lecture de fichiers système et wrappers PHP
+        '/(?:\.\.\/|\.\.\\\\|\/etc\/(?:passwd|shadow|hosts)|c:\\\\windows\\\\|boot\.ini|php:\/\/|file:\/\/|expect:\/\/|data:\/\/|zip:\/\/|zlib:\/\/)/i',
+        
+        // 4. OS Command Injection : Cible l'exécution de commandes système directes
+        '/(?:;\s*id\b|;\s*whoami\b|;\s*uname\b|\/bin\/(?:bash|sh|zsh)|cmd\.exe|powershell|wget\s+http|curl\s+http|nc\s+-e|netcat|tail\s+-f)/i',
+        
+        // 5. Code Injection (PHP/Template) : Cible l'évaluation dynamique
+        '/(?:<\?php|base64_decode\s*\(|str_rot13\s*\(|gzinflate\s*\(|system\s*\(|exec\s*\(|passthru\s*\(|shell_exec\s*\()/i'
     ];
-
     foreach ( $bad_patterns as $pattern ) {
         if ( preg_match( $pattern, $request_uri ) || preg_match( $pattern, $query_string ) ) {
             iweb_log_security_event( 'waf_alert_sqli_xss', 'critical', "Tentative d'attaque Web (SQLi/XSS/LFI) detectee sur l'URI : " . sanitize_text_field($request_uri) );
             
             // Note DevSecOps : Actuellement on fait de l'IDS (Détection). 
             // Si on décommente wp_die(), on devient un IPS (Prévention) !
-            // wp_die('iweb FleetGuard : Requête bloquée par sécurité.', 'Accès Refusé', ['response' => 403]);
+            wp_die('iweb FleetGuard : Requete bloquee par securite.', 'Acces Refuse', ['response' => 403]);
             break; 
         }
     }
-});
+}, 1);
 
 /**
  * I. Détection de tentative d'Upload de Web Shell (Fichiers malveillants)
@@ -427,7 +437,7 @@ function iweb_safe_scan_directory( $dir, &$results, $depth = 0 ) {
 
             $filename = strtolower( basename( $path ) );
             
-            // ✨ LA LIGNE MANQUANTE EST ICI :
+            //  LA LIGNE MANQUANTE EST ICI :
             $ext = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
             
             $is_malicious = false;
