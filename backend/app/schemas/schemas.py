@@ -81,3 +81,4 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
+    mfa_code: Optional[str] = None

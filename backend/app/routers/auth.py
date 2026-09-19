@@ -400,7 +400,23 @@ def reset_password(payload: schemas.ResetPasswordRequest, db: Session = Depends(
     if decoded_data.get("fingerprint") != current_fingerprint:
         raise HTTPException(status_code=400, detail="Ce lien de réinitialisation a déjà été utilisé.")
 
-    # 3. Validation réussie : on écrase l'ancien mot de passe
+    # ✨ 3. VERROU MFA (MULTI-FACTOR AUTHENTICATION) ✨
+    if admin.mfa_enabled:
+        if not payload.mfa_code:
+            raise HTTPException(status_code=403, detail="MFA_REQUIRED")
+        
+        mfa_input = payload.mfa_code.strip().upper()
+        
+        # A. Vérification TOTP classique
+        totp = pyotp.TOTP(admin.mfa_secret)
+        is_valid_totp = totp.verify(mfa_input)
+        is_valid_recovery = False
+                    
+        # B. Échec de TOTP
+        if not is_valid_totp and not is_valid_recovery:
+            raise HTTPException(status_code=401, detail="Code MFA ou de secours invalide")
+
+    # 4. Validation réussie : on écrase l'ancien mot de passe
     admin.hashed_password = security.get_password_hash(payload.new_password)
     db.commit()
 

@@ -6,15 +6,19 @@ import logoImg from '../assets/logo.png';
 export default function ResetPassword() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token'); // Extraction du token depuis l'URL
+  const token = searchParams.get('token'); 
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // Nouveaux états pour le MFA
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaRequired, setMfaRequired] = useState(false);
+
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Si aucun token n'est présent dans l'URL, on bloque l'accès
   useEffect(() => {
     if (!token) {
       setError("Lien de réinitialisation invalide ou manquant.");
@@ -43,13 +47,19 @@ export default function ResetPassword() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           token: token, 
-          new_password: newPassword 
+          new_password: newPassword,
+          mfa_code: mfaCode || null // Envoi du code s'il est saisi
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
+        // Interception de l'exigence MFA
+        if (response.status === 403 && data.detail === "MFA_REQUIRED") {
+          setMfaRequired(true);
+          return; 
+        }
         throw new Error(data.detail || "Erreur lors de la réinitialisation.");
       }
 
@@ -96,35 +106,58 @@ export default function ResetPassword() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Nouveau mot de passe
-              </label>
-              <input 
-                type="password" 
-                required
-                disabled={!token}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-blue-200"
-                placeholder="••••••••••••"
-              />
-            </div>
             
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Confirmer le mot de passe
-              </label>
-              <input 
-                type="password" 
-                required
-                disabled={!token}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-blue-200"
-                placeholder="••••••••••••"
-              />
+            {/* On masque les champs de mot de passe si le MFA est requis pour alléger l'interface */}
+            <div className={mfaRequired ? 'hidden' : 'block'}>
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Nouveau mot de passe
+                </label>
+                <input 
+                  type="password" 
+                  required={!mfaRequired}
+                  disabled={!token}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-blue-200"
+                  placeholder="••••••••••••"
+                />
+              </div>
+              
+              <div className="mb-6">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Confirmer le mot de passe
+                </label>
+                <input 
+                  type="password" 
+                  required={!mfaRequired}
+                  disabled={!token}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-blue-200"
+                  placeholder="••••••••••••"
+                />
+              </div>
             </div>
+
+            {/* Champ MFA conditionnel */}
+            {mfaRequired && (
+              <div className="mb-6">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Code de sécurité MFA
+                </label>
+                <p className="text-xs text-gray-500 mb-2">Saisissez votre code d'application.</p>
+                <input 
+                  type="text" 
+                  required
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-blue-200 text-center tracking-widest font-mono"
+                  placeholder="123456"
+                  autoComplete="off"
+                />
+              </div>
+            )}
 
             <button 
               type="submit"
@@ -133,7 +166,7 @@ export default function ResetPassword() {
                 isLoading || !token ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
               }`}
             >
-              {isLoading ? 'Enregistrement...' : 'Valider le mot de passe'}
+              {isLoading ? 'Vérification...' : (mfaRequired ? 'Valider le code MFA' : 'Valider le mot de passe')}
             </button>
           </form>
         )}
