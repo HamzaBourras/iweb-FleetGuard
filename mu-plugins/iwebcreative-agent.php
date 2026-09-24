@@ -319,8 +319,7 @@ add_action( 'init', function() {
         if ( preg_match( $pattern, $request_uri ) || preg_match( $pattern, $query_string ) ) {
             iweb_log_security_event( 'waf_alert_sqli_xss', 'critical', "Tentative d'attaque Web (SQLi/XSS/LFI) detectee sur l'URI : " . sanitize_text_field($request_uri) );
             
-            // Note DevSecOps : Actuellement on fait de l'IDS (Détection). 
-            // Si on décommente wp_die(), on devient un IPS (Prévention) !
+            // On bloque la requête immédiatement pour protéger le site
             wp_die('iweb FleetGuard : Requete bloquee par securite.', 'Acces Refuse', ['response' => 403]);
             break; 
         }

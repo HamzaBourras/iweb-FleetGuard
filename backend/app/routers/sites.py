@@ -494,7 +494,8 @@ async def run_malware_scan(
 async def delete_malicious_file(
     site_id: int, 
     payload: schemas.DeleteFileRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: models.DashboardAdmin = Depends(get_current_admin)
 ):
     try:
         site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
@@ -586,7 +587,8 @@ def whitelist_site_file(
 async def view_malicious_file(
     site_id: int, 
     payload: schemas.DeleteFileRequest, # On réutilise ce schéma car il contient juste "file_path"
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: models.DashboardAdmin = Depends(get_current_admin)
 ):
     try:
         site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
@@ -648,7 +650,8 @@ def get_site_alerts(
 async def resolve_security_alert(
     site_id: int, 
     alert_id: int, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: models.DashboardAdmin = Depends(get_current_admin)
 ):
     try:
         alert = db.query(models.SecurityAlert).filter(

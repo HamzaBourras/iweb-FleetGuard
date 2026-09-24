@@ -18,10 +18,8 @@ services:
     # On passe sur PostgreSQL, le moteur le plus robuste et recommandé pour Python/FastAPI
     image: postgres:15-alpine
     restart: always
-    environment:
-      POSTGRES_USER: fleetguard_admin
-      POSTGRES_PASSWORD: super_secret_password
-      POSTGRES_DB: fleetguard_db
+    env_file:
+      - .env
     ports:
       - "5432:5432"
     volumes:
@@ -29,7 +27,9 @@ services:
 
   # 2. L'API Backend (Le moteur de surveillance en Python)
   api:
-    build: ./backend
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
     restart: always
     working_dir: /app
     env_file:

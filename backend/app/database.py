@@ -9,12 +9,25 @@ Description :
 ===============================================================================
 """
 
+import os
+from dotenv import load_dotenv
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
 # Configuration de la connexion à la Base de Données PostgreSQL
-DATABASE_URL = "postgresql://fleetguard_admin:super_secret_password@db:5432/fleetguard_db"
+# Force la lecture du fichier .env
+load_dotenv()
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+POSTGRES_DB = os.getenv("POSTGRES_DB")
+
+# Vérification que les variables d'environnement sont bien définies
+if not all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB]):
+    raise ValueError("Les variables d'environnement POSTGRES_USER, POSTGRES_PASSWORD et POSTGRES_DB doivent être définies.")
+
+DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@db:5432/{POSTGRES_DB}"
 
 # Initialisation du moteur de base de données
 engine = create_engine(DATABASE_URL)
