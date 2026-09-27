@@ -381,9 +381,7 @@ export default function SiteInvestigation() {
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/alerts/${currentAlertId}/resolve`, {
         method: 'PATCH',
-        headers: {
-          
-        }
+        credentials: 'include'
       });
 
       if (!response.ok) {

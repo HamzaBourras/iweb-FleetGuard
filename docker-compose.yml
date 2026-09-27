@@ -10,12 +10,8 @@
 #    Gère l'isolation réseau, les variables d'environnement et les dépendances inter-services.
 # ===============================================================================
 
-version: '3.8'
-
 services:
-  # 1. La Base de Données Centrale (Le centre de mémoire de la Tour de Contrôle)
   db:
-    # On passe sur PostgreSQL, le moteur le plus robuste et recommandé pour Python/FastAPI
     image: postgres:15-alpine
     restart: always
     env_file:
@@ -25,7 +21,6 @@ services:
     volumes:
       - central_data:/var/lib/postgresql/data
 
-  # 2. L'API Backend (Le moteur de surveillance en Python)
   api:
     build: 
       context: ./backend
@@ -35,22 +30,19 @@ services:
     env_file:
       - .env
     volumes:
-      # Synchronise en temps réel ton dossier local "./backend" avec le conteneur
       - ./backend:/app
     ports:
-      - "8000:8000" # Ton API sera accessible sur http://localhost:8000
+      - "8000:8000"
     depends_on:
       - db
-    # Installe les bibliothèques requises et lance le serveur avec rechargement automatique
-    command: sh -c "pip install fastapi uvicorn sqlalchemy psycopg2-binary cryptography && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    # On laisse le Dockerfile gérer les dépendances. On ne garde que le lancement en mode dev (reload).
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  # 3. L'interface de gestion de la Base de Données
   adminer:
-    # Adminer remplace phpMyAdmin : il est plus léger et gère parfaitement PostgreSQL
     image: adminer
     restart: always
     ports:
-      - "8082:8080" # Accessible sur http://localhost:8081
+      - "8082:8080"
     depends_on:
       - db
   
@@ -64,10 +56,9 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - CHOKIDAR_USEPOLLING=true # Pour que le rechargement auto fonctionne bien sur Windows/WSL
+      - CHOKIDAR_USEPOLLING=true
     depends_on:
       - api
 
 volumes:
   central_data:
-
