@@ -27,7 +27,7 @@ POSTGRES_DB = os.getenv("POSTGRES_DB")
 if not all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB]):
     raise ValueError("Les variables d'environnement POSTGRES_USER, POSTGRES_PASSWORD et POSTGRES_DB doivent être définies.")
 
-DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@db:5432/{POSTGRES_DB}"
+DATABASE_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@db:5432/{POSTGRES_DB}"
 
 # Initialisation du moteur de base de données
 engine = create_engine(DATABASE_URL)

@@ -17,6 +17,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine
 import app.models.models as models
 
+from app.rate_limit import limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
 # Import de tes nouveaux routeurs
 from app.routers import auth, dashboard, sites, alerts, agent
 
@@ -29,7 +33,7 @@ POSTGRES_DB = os.getenv("POSTGRES_DB")
 if not all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB]):
     raise ValueError("Les variables d'environnement POSTGRES_USER, POSTGRES_PASSWORD et POSTGRES_DB doivent être définies.")
 
-DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@db:5432/{POSTGRES_DB}"
+DATABASE_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@db:5432/{POSTGRES_DB}"
 engine = create_engine(DATABASE_URL)
 models.Base.metadata.create_all(bind=engine)
 
@@ -48,6 +52,11 @@ app.add_middleware(
     allow_methods=["*"], 
     allow_headers=["*"], 
 )
+
+# Configuration du rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 # On branche les routeurs à l'application principale
 app.include_router(auth.router)

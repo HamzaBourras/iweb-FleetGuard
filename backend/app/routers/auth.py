@@ -17,6 +17,7 @@ import pyotp
 from fastapi import APIRouter, Depends, HTTPException, Response, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+from app.rate_limit import limiter
 
 # Import des modèles, schémas et utilitaires de sécurité
 import app.models.models as models
@@ -41,6 +42,7 @@ LOCKOUT_TIME = timedelta(minutes=15)
 
 # --- ROUTE DE CONNEXION ---
 @router.post("/login")
+@limiter.limit("5/minute") # Limitation stricte pour éviter les attaques par force brute
 def login_admin(
     request: Request,
     credentials: schemas.AdminLogin, 
@@ -143,7 +145,7 @@ def verify_session(admin: models.DashboardAdmin = Depends(get_current_admin)):
     }
 
 # --- ROUTE 1 : GÉNÉRATION DU SECRET ET DU QR CODE (SÉCURISÉ PAR MOT DE PASSE) ---
-@router.post("/mfa/setup") # Attention : C'est un POST maintenant
+@router.post("/mfa/setup") 
 def setup_mfa(
     payload: schemas.RecoveryCodesRequest, # On réutilise ton schéma qui demande un mot de passe
     admin: models.DashboardAdmin = Depends(get_current_admin), 
@@ -179,7 +181,9 @@ def setup_mfa(
 
 # --- ROUTE 2 : VALIDATION ET ACTIVATION DÉFINITIVE ---
 @router.post("/mfa/enable")
+@limiter.limit("10/minute")
 def enable_mfa(
+    request: Request,
     payload: schemas.MfaEnableRequest, 
     background_tasks: BackgroundTasks,
     admin: models.DashboardAdmin = Depends(get_current_admin), 
@@ -240,7 +244,9 @@ def enable_mfa(
 
 # --- ROUTE DE REGENERATION DES CODES DE SECOURS ---
 @router.post("/mfa/regenerate-recovery-codes")
+@limiter.limit("5/hour") # Limitation stricte pour éviter les abus
 def regenerate_recovery_codes(
+    request: Request,
     payload: schemas.RecoveryCodesRequest,
     background_tasks: BackgroundTasks,
     admin: models.DashboardAdmin = Depends(get_current_admin),
@@ -341,7 +347,9 @@ def change_password(
 
 # --- ROUTE : DEMANDE DE RÉINITIALISATION (FORGOT PASSWORD) ---
 @router.post("/forgot-password")
+@limiter.limit("3/hour") # Limitation stricte pour éviter les abus
 def forgot_password(
+    request: Request,
     payload: schemas.ForgotPasswordRequest, 
     background_tasks: BackgroundTasks, 
     db: Session = Depends(get_db)
@@ -382,7 +390,8 @@ def forgot_password(
     
 # --- ROUTE : VALIDATION DU NOUVEAU MOT DE PASSE ---
 @router.post("/reset-password")
-def reset_password(payload: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute") # Limitation stricte pour éviter les abus
+def reset_password(request: Request, payload: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
     # 1. Décodage et vérification de la signature
     decoded_data = security.decode_access_token(payload.token) 
     
