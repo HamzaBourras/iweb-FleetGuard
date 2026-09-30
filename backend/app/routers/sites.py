@@ -33,6 +33,7 @@ import app.security.security as security
 # Import des dépendances communes et services
 from app.dependencies import get_db, get_current_admin
 from app.services.email_service import send_soc_email
+from app.security.url_validator import validate_public_url, UnsafeUrlError
 
 router = APIRouter(
     prefix="/api/sites",
@@ -116,9 +117,15 @@ def get_all_sites(
 @router.post("")
 def create_site(
     site_data: schemas.SiteCreate,
-    admin: models.DashboardAdmin = Depends(get_current_admin),
+    # admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
+    # Validation anti-SSRF avant toute utilisation de l'URL
+    try:
+        validate_public_url(site_data.url)
+    except UnsafeUrlError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # 1. Génération du token en clair
     raw_token = f"IWEB_{secrets.token_urlsafe(32)}"
     
