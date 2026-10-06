@@ -25,12 +25,18 @@ export default function ChangePasswordModal({ onClose, showNotification }) {
     setError('');
 
     // Validation du mot de passe selon les critères définis dans le backend
-    if (newPassword.length < 10) {
-      setError("Le mot de passe doit contenir au moins 10 caractères.");
+    if (newPassword.length < 14 || newPassword.length > 16) {
+      setError("Le mot de passe doit contenir entre 14 et 16 caractères.");
       return;
     }
+
     if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
       setError("Le mot de passe doit contenir majuscule, minuscule et chiffre.");
+      return;
+    }
+
+    if (!/[@#$%^&+=]/.test(newPassword)) {
+      setError("Le mot de passe doit contenir au moins un caractère spécial (@#$%^&+=).");
       return;
     }
 

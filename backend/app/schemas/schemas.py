@@ -6,8 +6,8 @@ import re
 
 # Fonction pour la validation de la force du mot de passe
 def validate_password_strength(value: str) -> str:
-    if len(value) < 10:
-        raise ValueError("Le mot de passe doit contenir au moins 10 caractères.")
+    if len(value) < 14 or len(value) > 16:
+        raise ValueError("Le mot de passe doit contenir entre 14 et 16 caractères.")
     if not re.search(r"[A-Z]", value):
         raise ValueError("Le mot de passe doit contenir au moins une majuscule.")
     if not re.search(r"[a-z]", value):

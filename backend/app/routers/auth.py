@@ -409,19 +409,35 @@ def reset_password(request: Request, payload: schemas.ResetPasswordRequest, db: 
     if decoded_data.get("fingerprint") != current_fingerprint:
         raise HTTPException(status_code=400, detail="Ce lien de réinitialisation a déjà été utilisé.")
 
-    # ✨ 3. VERROU MFA (MULTI-FACTOR AUTHENTICATION) ✨
+    # ✨ 3. VERROU MFA (MULTI-FACTOR AUTHENTICATION) 
     if admin.mfa_enabled:
         if not payload.mfa_code:
             raise HTTPException(status_code=403, detail="MFA_REQUIRED")
-        
+
         mfa_input = payload.mfa_code.strip().upper()
-        
+
         # A. Vérification TOTP classique
         totp = pyotp.TOTP(admin.mfa_secret)
         is_valid_totp = totp.verify(mfa_input)
         is_valid_recovery = False
-                    
-        # B. Échec de TOTP
+
+        # B. Si le TOTP échoue, on vérifie les codes de secours
+        if not is_valid_totp and admin.mfa_recovery_codes:
+            try:
+                hashed_codes = json.loads(admin.mfa_recovery_codes)
+            except json.JSONDecodeError:
+                hashed_codes = []
+
+            for idx, hashed_code in enumerate(hashed_codes):
+                if security.verify_password(mfa_input, hashed_code):
+                    is_valid_recovery = True
+                    # Le code de secours est à usage unique : on le supprime
+                    hashed_codes.pop(idx)
+                    admin.mfa_recovery_codes = json.dumps(hashed_codes)
+                    db.commit()
+                    break
+
+        # C. Si ni le TOTP ni le code de secours ne sont bons
         if not is_valid_totp and not is_valid_recovery:
             raise HTTPException(status_code=401, detail="Code MFA ou de secours invalide")
 

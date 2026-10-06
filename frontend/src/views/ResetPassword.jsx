@@ -14,6 +14,7 @@ export default function ResetPassword() {
   // Nouveaux états pour le MFA
   const [mfaCode, setMfaCode] = useState('');
   const [mfaRequired, setMfaRequired] = useState(false);
+  const [useRecovery, setUseRecovery] = useState(false);
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -35,22 +36,34 @@ export default function ResetPassword() {
     }
 
     // Validation du mot de passe selon les critères définis dans le backend
-    if (newPassword.length < 10) {
-      setError("Le mot de passe doit contenir au moins 8 caractères.");
+    if (newPassword.length < 14 || newPassword.length > 16) {
+      setError("Le mot de passe doit contenir entre 14 et 16 caractères.");
       return;
     }
 
-    if (newPassword.length < 10) {
-      setError("Le mot de passe doit contenir au moins 10 caractères.");
-      return;
-    }
     if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
       setError("Le mot de passe doit contenir majuscule, minuscule et chiffre.");
+      return;
+    }
+    
+    if (!/[@#$%^&+=]/.test(newPassword)) {
+      setError("Le mot de passe doit contenir au moins un caractère spécial (@#$%^&+=).");
       return;
     }
 
 
     setIsLoading(true);
+
+    if (mfaRequired) {
+      if (useRecovery && mfaCode.length < 14) {
+        setError("Le code de secours semble incomplet.");
+        return;
+      }
+      if (!useRecovery && mfaCode.length !== 6) {
+        setError("Le code à 6 chiffres est requis.");
+        return;
+      }
+    }
 
     try {
       const response = await fetch('http://localhost:8000/api/auth/reset-password', {
@@ -155,18 +168,35 @@ export default function ResetPassword() {
             {mfaRequired && (
               <div className="mb-6">
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                  Code de sécurité MFA
+                  {useRecovery ? "Code de secours à usage unique" : "Code à 6 chiffres (Google Auth / Authy)"}
                 </label>
-                <p className="text-xs text-gray-500 mb-2">Saisissez votre code d'application.</p>
+                <p className="text-xs text-gray-500 mb-2">
+                  {useRecovery
+                    ? "Entrez l'un de vos codes de secours non utilisés."
+                    : "Saisissez votre code d'application."}
+                </p>
                 <input
                   type="text"
                   required
                   value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-blue-200 text-center tracking-widest font-mono"
-                  placeholder="123456"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // En mode secours : lettres/chiffres/tirets acceptés. Sinon : chiffres uniquement.
+                    setMfaCode(useRecovery ? val.toUpperCase() : val.replace(/\D/g, ''));
+                  }}
+                  maxLength={useRecovery ? 14 : 6}
+                  className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 focus:ring-2 focus:ring-blue-200 text-center tracking-widest font-mono uppercase"
+                  placeholder={useRecovery ? "XXXX-XXXX-XXXX" : "123456"}
                   autoComplete="off"
                 />
+
+                <button
+                  type="button"
+                  onClick={() => { setUseRecovery(!useRecovery); setMfaCode(''); setError(''); }}
+                  className="w-full text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors mt-3"
+                >
+                  {useRecovery ? "Utiliser l'application d'authentification" : "J'ai perdu mon téléphone (Code de secours)"}
+                </button>
               </div>
             )}
 
