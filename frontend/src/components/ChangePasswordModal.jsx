@@ -16,7 +16,7 @@ export default function ChangePasswordModal({ onClose, showNotification }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -24,11 +24,17 @@ export default function ChangePasswordModal({ onClose, showNotification }) {
     e.preventDefault();
     setError('');
 
-    if (newPassword.length < 8) {
-      setError("Le nouveau mot de passe doit contenir au moins 8 caractères.");
+    // Validation du mot de passe selon les critères définis dans le backend
+    if (newPassword.length < 10) {
+      setError("Le mot de passe doit contenir au moins 10 caractères.");
       return;
     }
-    
+    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      setError("Le mot de passe doit contenir majuscule, minuscule et chiffre.");
+      return;
+    }
+
+
     if (newPassword !== confirmPassword) {
       setError("Les nouveaux mots de passe ne correspondent pas.");
       return;
@@ -55,7 +61,7 @@ export default function ChangePasswordModal({ onClose, showNotification }) {
 
       showNotification('success', data.message);
       onClose(); // Ferme la modale en cas de succès
-      
+
     } catch (err) {
       setError(err.message);
     } finally {
@@ -66,7 +72,7 @@ export default function ChangePasswordModal({ onClose, showNotification }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-        
+
         {/* --- EN-TÊTE --- */}
         <div className="p-6 bg-slate-900 border-b border-slate-800 flex items-start justify-between">
           <div className="flex items-center gap-4">
@@ -91,7 +97,7 @@ export default function ChangePasswordModal({ onClose, showNotification }) {
                 {error}
               </div>
             )}
-            
+
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-2">Mot de passe actuel</label>
               <input

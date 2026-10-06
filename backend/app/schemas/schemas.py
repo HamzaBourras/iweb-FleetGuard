@@ -1,6 +1,22 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List, Any
 from datetime import datetime
+import re
+
+
+# Fonction pour la validation de la force du mot de passe
+def validate_password_strength(value: str) -> str:
+    if len(value) < 10:
+        raise ValueError("Le mot de passe doit contenir au moins 10 caractères.")
+    if not re.search(r"[A-Z]", value):
+        raise ValueError("Le mot de passe doit contenir au moins une majuscule.")
+    if not re.search(r"[a-z]", value):
+        raise ValueError("Le mot de passe doit contenir au moins une minuscule.")
+    if not re.search(r"[0-9]", value):
+        raise ValueError("Le mot de passe doit contenir au moins un chiffre.")
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", value):
+        raise ValueError("Le mot de passe doit contenir au moins un caractère spécial.")
+    return value
 
 class SiteCreate(BaseModel):
     site_name: str
@@ -46,6 +62,11 @@ class AdminLogin(BaseModel):
     password: str
     mfa_code: Optional[str] = None # Optionnel car le frontend ne l'envoie pas au premier clic
 
+    @field_validator("password")  # Valide le mot de passe lors de la création de l'objet
+    @classmethod
+    def check_password_strength(cls, v):
+        return validate_password_strength(v)
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -53,9 +74,21 @@ class Token(BaseModel):
 class MfaEnableRequest(BaseModel):
     code: str
 
+# Schéma pour la réinitialisation du mot de passe (lorsque l'utilisateur est connecté)
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
+
+    @field_validator("new_password")  # Valide le mot de passe lors de la création de l'objet
+    @classmethod
+    def check_new_password(cls, v):
+        return validate_password_strength(v)
+
+    @field_validator("current_password")  # Valide le mot de passe lors de la création de l'objet
+    @classmethod
+    def check_current_password(cls, v):
+        return validate_password_strength(v) 
+
 
 class RecoveryCodesRequest(BaseModel):
     password: str
@@ -78,7 +111,13 @@ class NotificationResponse(NotificationBase):
 class ForgotPasswordRequest(BaseModel):
     email: str
 
+# Schéma pour la réinitialisation du mot de passe (s'il est oublié)
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
     mfa_code: Optional[str] = None
+
+    @field_validator("new_password")  # Valide le mot de passe lors de la création de l'objet
+    @classmethod
+    def check_new_password(cls, v):
+        return validate_password_strength(v)

@@ -117,7 +117,7 @@ def get_all_sites(
 @router.post("")
 def create_site(
     site_data: schemas.SiteCreate,
-    # admin: models.DashboardAdmin = Depends(get_current_admin),
+    admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     # Validation anti-SSRF avant toute utilisation de l'URL

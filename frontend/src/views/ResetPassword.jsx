@@ -6,11 +6,11 @@ import logoImg from '../assets/logo.png';
 export default function ResetPassword() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token'); 
+  const token = searchParams.get('token');
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
+
   // Nouveaux états pour le MFA
   const [mfaCode, setMfaCode] = useState('');
   const [mfaRequired, setMfaRequired] = useState(false);
@@ -34,10 +34,21 @@ export default function ResetPassword() {
       return;
     }
 
-    if (newPassword.length < 8) {
+    // Validation du mot de passe selon les critères définis dans le backend
+    if (newPassword.length < 10) {
       setError("Le mot de passe doit contenir au moins 8 caractères.");
       return;
     }
+
+    if (newPassword.length < 10) {
+      setError("Le mot de passe doit contenir au moins 10 caractères.");
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      setError("Le mot de passe doit contenir majuscule, minuscule et chiffre.");
+      return;
+    }
+
 
     setIsLoading(true);
 
@@ -45,8 +56,8 @@ export default function ResetPassword() {
       const response = await fetch('http://localhost:8000/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          token: token, 
+        body: JSON.stringify({
+          token: token,
           new_password: newPassword,
           mfa_code: mfaCode || null // Envoi du code s'il est saisi
         }),
@@ -58,7 +69,7 @@ export default function ResetPassword() {
         // Interception de l'exigence MFA
         if (response.status === 403 && data.detail === "MFA_REQUIRED") {
           setMfaRequired(true);
-          return; 
+          return;
         }
         throw new Error(data.detail || "Erreur lors de la réinitialisation.");
       }
@@ -74,7 +85,7 @@ export default function ResetPassword() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 border border-gray-100">
-        
+
         <div className="text-center mb-6 flex flex-col items-center border-b border-gray-200 pb-4">
           <img src={logoImg} alt="Logo iweb FleetGuard" className="w-56 h-auto mb-4" />
           <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
@@ -85,8 +96,8 @@ export default function ResetPassword() {
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-500 text-red-700 rounded flex items-start gap-2 text-sm font-semibold">
-             <AlertTriangle className="w-5 h-5 shrink-0" /> 
-             <span>{error}</span>
+            <AlertTriangle className="w-5 h-5 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
@@ -97,7 +108,7 @@ export default function ResetPassword() {
               <p className="font-bold">Mot de passe mis à jour !</p>
               <p className="text-sm">Votre compte est à nouveau sécurisé.</p>
             </div>
-            <button 
+            <button
               onClick={() => navigate('/login', { replace: true })}
               className="w-full text-white font-bold py-3 px-4 rounded-lg bg-slate-900 hover:bg-slate-800 transition-all"
             >
@@ -106,15 +117,15 @@ export default function ResetPassword() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            
+
             {/* On masque les champs de mot de passe si le MFA est requis pour alléger l'interface */}
             <div className={mfaRequired ? 'hidden' : 'block'}>
               <div className="mb-4">
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                   Nouveau mot de passe
                 </label>
-                <input 
-                  type="password" 
+                <input
+                  type="password"
                   required={!mfaRequired}
                   disabled={!token}
                   value={newPassword}
@@ -123,13 +134,13 @@ export default function ResetPassword() {
                   placeholder="••••••••••••"
                 />
               </div>
-              
+
               <div className="mb-6">
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                   Confirmer le mot de passe
                 </label>
-                <input 
-                  type="password" 
+                <input
+                  type="password"
                   required={!mfaRequired}
                   disabled={!token}
                   value={confirmPassword}
@@ -147,8 +158,8 @@ export default function ResetPassword() {
                   Code de sécurité MFA
                 </label>
                 <p className="text-xs text-gray-500 mb-2">Saisissez votre code d'application.</p>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
                   value={mfaCode}
                   onChange={(e) => setMfaCode(e.target.value)}
@@ -159,12 +170,11 @@ export default function ResetPassword() {
               </div>
             )}
 
-            <button 
+            <button
               type="submit"
               disabled={isLoading || !token}
-              className={`w-full text-white font-bold py-3 px-4 rounded-lg shadow transition-all ${
-                isLoading || !token ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
+              className={`w-full text-white font-bold py-3 px-4 rounded-lg shadow transition-all ${isLoading || !token ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
             >
               {isLoading ? 'Vérification...' : (mfaRequired ? 'Valider le code MFA' : 'Valider le mot de passe')}
             </button>

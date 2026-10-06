@@ -305,7 +305,7 @@ def logout_admin(response: Response, admin: models.DashboardAdmin = Depends(get_
     )
     return {"message": "Déconnexion réussie et cookie détruit."}
 
-# --- ROUTE DE CHANGEMENT DE MOT DE PASSE ---
+# --- ROUTE DE CHANGEMENT DE MOT DE PASSE lorsqu'un utilisateur est connecté ---
 @router.post("/change-password")
 def change_password(
     payload: schemas.PasswordChangeRequest,
@@ -388,7 +388,7 @@ def forgot_password(
         print("\n🚨 ERREUR FORGOT PASSWORD 🚨\n", traceback.format_exc())
         raise HTTPException(status_code=500, detail="Erreur interne du serveur.")
     
-# --- ROUTE : VALIDATION DU NOUVEAU MOT DE PASSE ---
+# --- ROUTE : VALIDATION DU NOUVEAU MOT DE PASSE LORSQU'IL EST OUBLIÉ ---
 @router.post("/reset-password")
 @limiter.limit("5/minute") # Limitation stricte pour éviter les abus
 def reset_password(request: Request, payload: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
