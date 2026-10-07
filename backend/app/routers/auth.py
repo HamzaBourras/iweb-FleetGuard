@@ -354,6 +354,20 @@ def forgot_password(
     background_tasks: BackgroundTasks, 
     db: Session = Depends(get_db)
 ):
+    # 1. Rate Limiting par email pour éviter les abus
+    FORGOT_PASSWORD_ATTEMPTS = {} # { "email": [timestamp, ...] }
+
+    now = datetime.utcnow()
+    email_key = payload.email.lower().strip()
+
+    attempts = [t for t in FORGOT_PASSWORD_ATTEMPTS.get(email_key, []) if now - t < timedelta(hours=1)]
+    if len(attempts) >= 3:
+    # On renvoie le même message neutre pour ne pas révéler qu'on limite spécifiquement cet email
+        return {"message": "Si cette adresse existe, un email contenant les instructions a été envoyé."}
+    
+    attempts.append(now)
+    FORGOT_PASSWORD_ATTEMPTS[email_key] = attempts
+
     try:
         admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == payload.email).first()
         
