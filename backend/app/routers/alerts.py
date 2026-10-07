@@ -11,6 +11,7 @@ Description :
 ===============================================================================
 """
 
+import hmac
 import os
 from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -49,7 +50,7 @@ def receive_agent_alerts(
     for site in sites:
         try:
             decrypted_token = security.decrypt_token(site.secret_token)
-            if token_recu == decrypted_token:
+            if hmac.compare_digest(token_recu, decrypted_token): # comparaison à temps constant
                 site_client = site
                 break
         except Exception:
