@@ -44,13 +44,27 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS
+# Configuration des en-têtes de sécurité
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    # HSTS uniquement utile derrière HTTPS (sera activé dans le déploiement final)
+    # response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    return response
+
+
+# Configuration du CORS pour n'autoriser que le frontend React
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"], 
     allow_credentials=True,
     allow_methods=["*"], 
     allow_headers=["*"], 
+
 )
 
 # Configuration du rate limiting
