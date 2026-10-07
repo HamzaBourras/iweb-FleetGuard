@@ -22,6 +22,24 @@ class SiteCreate(BaseModel):
     site_name: str
     url: str
 
+    @field_validator("url") # Valide l'URL lors de la création de l'objet
+    @classmethod
+    def validate_url_format(cls, v):
+        v = v.strip()
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("L'URL doit commencer par http:// ou https://")
+        if len(v) > 2048:
+            raise ValueError("URL trop longue.")
+        return v
+    
+    @field_validator("site_name") # Valide le nom du site lors de la création de l'objet
+    @classmethod
+    def validate_site_name(cls, v):
+        v = v.strip()
+        if len(v) < 2 or len(v) > 100:
+            raise ValueError("Le nom du site doit contenir entre 2 et 100 caractères.")
+
+
 class DeleteFileRequest(BaseModel):
     file_path: str
     
