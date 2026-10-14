@@ -26,6 +26,7 @@ export default function Profile() {
 
   // État pour la modale de codes de secours
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [userEmail, setUserEmail] = useState(''); // État pour stocker l'email de l'administrateur
 
   // Récupération de l'état réel du MFA au chargement de la page
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function Profile() {
         
         if (response.ok) {
           const data = await response.json();
+          setUserEmail(data.admin_email); // Met à jour l'email de l'administrateur
           setMfaEnabled(data.mfa_enabled); // Met à jour l'interface avec la vraie donnée de la BDD
         }
       } catch (error) {
@@ -101,7 +103,7 @@ export default function Profile() {
               </label>
               <input 
                 type="email" 
-                defaultValue="admin@iweb.com" 
+                defaultValue={userEmail}
                 disabled
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-500 cursor-not-allowed"
               />
