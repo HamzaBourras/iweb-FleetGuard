@@ -35,6 +35,10 @@ from app.dependencies import get_db, get_current_admin
 from app.services.email_service import send_soc_email
 from app.security.url_validator import validate_public_url, UnsafeUrlError
 
+# Configuration du logger pour le module 
+import logging
+logger = logging.getLogger(__name__)
+
 router = APIRouter(
     prefix="/api/sites",
     tags=["Gestion des Sites"]
@@ -496,59 +500,152 @@ async def run_malware_scan(
         print("="*50 + "\n")
         raise HTTPException(status_code=500, detail=f"Erreur interne du serveur lors de l'analyse des fichiers. ({str(e)})")
 
-# --- ROUTE : SUPPRESSION D'UN FICHIER MALVEILLANT SUR LE SITE ---
+
+# --- FONCTION UTILITAIRE : EXTRACTION DU MESSAGE D'ERREUR DE L'AGENT ---
+def _agent_message(response: httpx.Response) -> Optional[str]:
+    """Extrait le message d'une erreur de l'agent (format WP_Error), ou None
+    si le corps n'est pas du JSON (ex. page HTML d'un pare-feu d'hébergement)."""
+    try:
+        data = response.json()
+    except ValueError:
+        return None
+    if isinstance(data, dict):
+        msg = data.get("message") or data.get("detail")
+        return msg if isinstance(msg, str) else None
+    return None
+
+
+# --- ROUTE : MISE EN QUARANTAINE D'UN FICHIER MALVEILLANT SUR LE SITE ---
 @router.post("/{site_id:int}/delete-file")
 async def delete_malicious_file(
-    site_id: int, 
+    site_id: int,
     payload: schemas.DeleteFileRequest,
     db: Session = Depends(get_db),
     admin: models.DashboardAdmin = Depends(get_current_admin)
 ):
+    # ---------- 1. Contrôles locaux ----------
+    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
+
+    # (Guide 3.4) Seuls les fichiers du dernier rapport de scan peuvent être traités
+    reported = {f.get("file") for f in (site.malware_report or [])}
+    if payload.file_path not in reported:
+        raise HTTPException(
+            status_code=403,
+            detail="Ce fichier ne figure pas dans le dernier rapport de scan. Relancez une analyse."
+        )
+
     try:
-        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-        if not site:
-            raise HTTPException(status_code=404, detail="Cible introuvable.")
+        decrypted_token = security.decrypt_token(site.secret_token)
+    except Exception:
+        logger.exception("Déchiffrement du jeton impossible pour le site %s", site_id)
+        raise HTTPException(status_code=500, detail="Erreur interne : jeton de l'actif illisible.")
 
-        base_url = site.url.rstrip('/')
-        delete_endpoint = f"{base_url}/wp-json/iwebcreative/v1/delete-file"
-        
-        try:
-            decrypted_token = security.decrypt_token(site.secret_token)
-        except Exception:
-            raise HTTPException(status_code=500, detail="Erreur de déchiffrement du jeton.")
+    delete_endpoint = f"{site.url.rstrip('/')}/wp-json/iwebcreative/v1/delete-file"
 
+    # ---------- 2. Appel de l'agent ----------
+    try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
                 delete_endpoint,
                 headers={"Authorization": f"Bearer {decrypted_token}"},
                 json={"file_path": payload.file_path}
             )
-            
-            if response.status_code == 401:
-                raise HTTPException(status_code=401, detail="Jeton de sécurité invalide.")
-            
-            if response.status_code != 200:
-                err_data = response.json()
-                err_msg = err_data.get('message', 'Échec de la suppression sur le serveur distant.')
-                raise HTTPException(status_code=response.status_code, detail=err_msg)
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="Délai dépassé : le site distant n'a pas répondu à la demande de mise en quarantaine."
+        )
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=503,
+            detail="Impossible de joindre le site distant. Vérifiez qu'il est en ligne."
+        )
 
+    # ---------- 3. Interprétation de la réponse de l'agent ----------
+    status = response.status_code
+    agent_msg = _agent_message(response)
+    already_removed = False
+
+    if status == 200:
+        pass  # succès
+
+    elif status == 404:
+        # Le fichier n'existe plus : l'objectif est atteint, on nettoie juste le rapport
+        already_removed = True
+
+    elif status == 400:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Requête invalide : {agent_msg}" if agent_msg
+            else "Requête invalide : le chemin du fichier n'a pas été transmis correctement à l'agent."
+        )
+
+    elif status == 401:
+        # 502 et non 401 : un 401 laisserait croire que la session de l'admin a expiré
+        raise HTTPException(
+            status_code=502,
+            detail="L'agent a refusé le jeton de sécurité (révoqué ou mal configuré). "
+                   "Effectuez une rotation du jeton puis mettez à jour wp-config.php."
+        )
+
+    elif status == 403:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Opération refusée par l'agent : {agent_msg}" if agent_msg
+            else "Le serveur distant a bloqué la requête (pare-feu d'hébergement ou règle de sécurité)."
+        )
+
+    elif status == 500:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Échec sur le serveur distant : {agent_msg}" if agent_msg
+            else "L'agent n'a pas pu déplacer le fichier en quarantaine. "
+                 "Vérifiez les permissions (CHMOD) de wp-content et wp-content/uploads."
+        )
+
+    elif status in (502, 503, 504):
+        raise HTTPException(
+            status_code=502,
+            detail="Le site distant est temporairement indisponible. Réessayez dans quelques instants."
+        )
+
+    else:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Réponse inattendue de l'agent (HTTP {status})."
+        )
+
+    # ---------- 4. Mise à jour du rapport et du score ----------
+    try:
         if site.malware_report:
-            updated_report = [f for f in site.malware_report if f.get('file') != payload.file_path]
-            site.malware_report = updated_report
-            
-            if len(updated_report) == 0:
-                site.health_score = 100 
-                
+            site.malware_report = [
+                f for f in site.malware_report if f.get("file") != payload.file_path
+            ]
             db.commit()
-            recalculate_health_score(site, db)
 
-        return {"message": "Payload détruit avec succès."}
+        recalculate_health_score(site, db)  # commit + refresh en interne
 
-    except HTTPException:
-        raise
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Mise à jour du rapport impossible (site %s)", site_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Le fichier a bien été traité sur le site distant, mais la mise à jour du rapport "
+                   "a échoué. Relancez un scan anti-malware pour resynchroniser."
+        )
+
+    # ---------- 5. Réponse au frontend ----------
+    return {
+        "success": True,
+        "already_removed": already_removed,
+        "message": (
+            "Le fichier n'existe plus sur le serveur distant (déjà supprimé ou déplacé). Le rapport a été mis à jour."
+            if already_removed
+            else "Fichier malveillant mis en quarantaine avec succès sur le serveur distant."
+        ),
+    }
 
 # --- ROUTE : MARQUER UN FICHIER COMME SAIN (WHITELIST) ---
 @router.post("/{site_id:int}/whitelist-file")
@@ -582,6 +679,7 @@ def whitelist_site_file(
     flag_modified(site, "malware_report")
 
     db.commit()
+    # Recalcul du score de santé après mise à jour de la whitelist
     recalculate_health_score(site, db)
 
     return {

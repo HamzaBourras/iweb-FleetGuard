@@ -451,7 +451,7 @@ function iweb_safe_scan_directory( $dir, &$results, $depth = 0 ) {
             // Test B : Extension finale exécutable
             elseif ( in_array( $ext, $dangerous_extensions, true ) ) {
                 $is_malicious = true;
-                $threat_type = 'Web Shell ou script exécutable potentiel';
+                $threat_type = 'Web Shell ou script executable potentiel';
             }
 
             // Test C : Double extension (ex: shell.php.png, backdoor.phtml.jpg)
@@ -512,42 +512,72 @@ function iweb_run_malware_scan() {
 }
 
 
+// Fonction utilitaire pour résoudre un chemin relatif vers un chemin absolu dans le dossier uploads
+function iweb_resolve_in_uploads( $file_path ) {
+    $base = realpath( wp_upload_dir()['basedir'] );
+    $real = realpath( ABSPATH . ltrim( $file_path, '/' ) );
+    if ( ! $base || ! $real ) return false;
+    if ( strpos( $real, $base . DIRECTORY_SEPARATOR ) !== 0 ) return false;
+    return $real;
+}
+
+
 /**
- * 10. Module d'Intervention : Suppression de fichier malveillant
+ * 10. Module d'Intervention : mise en quarantaine d'un fichier malveillant
+ *
+ * Codes de retour (consommés par sites.py) :
+ *   200 : fichier déplacé en quarantaine
+ *   400 : paramètre manquant ou cible invalide (ce n'est pas un fichier)
+ *   401 : jeton refusé (géré par iweb_verify_bearer_token)
+ *   403 : chemin hors du dossier uploads
+ *   404 : fichier introuvable (déjà supprimé ou déplacé)
+ *   500 : échec technique (permissions, dossier de quarantaine)
  */
 function iweb_delete_malicious_file( WP_REST_Request $request ) {
-    $params = $request->get_json_params();
+    $params    = $request->get_json_params();
     $file_path = isset( $params['file_path'] ) ? sanitize_text_field( $params['file_path'] ) : '';
 
     if ( empty( $file_path ) ) {
         return new WP_Error( 'missing_param', 'Chemin du fichier manquant.', [ 'status' => 400 ] );
     }
 
-    // 🚨 SÉCURITÉ ABSOLUE : On interdit la suppression hors du dossier uploads
-    if ( strpos( $file_path, 'wp-content/uploads' ) === false ) {
-        return new WP_Error( 
-            'forbidden_path', 
-            'Intervention refusée : Ce fichier est un fichier systeme. Nettoyage manuel requis via FTP.', 
-            [ 'status' => 403 ] 
-        );
+    // 1. Le fichier existe-t-il ? (realpath renvoie false s'il n'existe pas)
+    if ( realpath( ABSPATH . ltrim( $file_path, '/' ) ) === false ) {
+        return new WP_Error( 'not_found', 'Fichier introuvable : il a peut-être déjà été supprimé ou déplacé.', [ 'status' => 404 ] );
     }
 
-    // Construction du chemin absolu
-    $absolute_path = ABSPATH . ltrim( $file_path, '/' );
-
-    if ( ! file_exists( $absolute_path ) ) {
-        return new WP_Error( 'not_found', 'Fichier introuvable. Il a peut-etre deja ete supprime.', [ 'status' => 404 ] );
+    // 2. Est-il bien dans wp-content/uploads ? (bloque les ../ et les liens symboliques)
+    $real = iweb_resolve_in_uploads( $file_path );
+    if ( ! $real ) {
+        return new WP_Error( 'forbidden_path', 'Chemin refusé : le fichier est en dehors du dossier uploads.', [ 'status' => 403 ] );
     }
 
-    // Tentative de suppression (unlink)
-    if ( unlink( $absolute_path ) ) {
-        return rest_ensure_response( [ 
-            'success' => true, 
-            'message' => "Le payload malveillant a ete detruit avec succes." 
-        ] );
-    } else {
-        return new WP_Error( 'delete_failed', 'Impossible de supprimer le fichier. Verifiez les permissions (CHMOD) du serveur.', [ 'status' => 500 ] );
+    // 3. On ne déplace que des fichiers (jamais un dossier)
+    if ( ! is_file( $real ) ) {
+        return new WP_Error( 'invalid_target', 'La cible n\'est pas un fichier.', [ 'status' => 400 ] );
     }
+
+    // 4. Dossier de quarantaine
+    $q = WP_CONTENT_DIR . '/iweb-quarantine';
+    if ( ! wp_mkdir_p( $q ) || ! is_dir( $q ) || ! is_writable( $q ) ) {
+        return new WP_Error( 'quarantine_unavailable', 'Dossier de quarantaine inaccessible (permissions).', [ 'status' => 500 ] );
+    }
+    if ( ! file_exists( $q . '/.htaccess' ) ) {
+        file_put_contents( $q . '/.htaccess', 'Deny from all' );
+    }
+
+    // 5. Déplacement (nom unique pour éviter les collisions)
+    $name = time() . '_' . wp_generate_password( 6, false ) . '_' . sanitize_file_name( basename( $real ) ) . '.quarantine';
+    if ( ! @rename( $real, $q . '/' . $name ) ) {
+        return new WP_Error( 'move_failed', 'Impossible de déplacer le fichier : vérifiez les permissions du serveur.', [ 'status' => 500 ] );
+    }
+
+    // On ne renvoie PAS le chemin absolu du serveur
+    return rest_ensure_response( [
+        'success'         => true,
+        'message'         => 'Fichier mis en quarantaine.',
+        'quarantine_name' => $name,
+    ] );
 }
 
 

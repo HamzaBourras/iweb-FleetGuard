@@ -39,6 +39,21 @@ import {
 
 import FileInspectionModal from '../components/FileInspectionModal';
 
+// --- 1) Helper : extrait un message lisible d'une réponse d'erreur FastAPI ---
+// `detail` peut être une chaîne (HTTPException) ou un tableau (422 de validation)
+const extractErrorMessage = (data, fallback) => {
+  const detail = data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const text = detail
+      .map((e) => String(e?.msg || '').replace(/^Value error,\s*/i, ''))
+      .filter(Boolean)
+      .join(' ');
+    if (text) return text;
+  }
+  return fallback;
+};
+
 export default function SiteInvestigation() {
   // On récupère la fonction envoyée par le Dashboard
   const { setDynamicSiteName } = useOutletContext() || {};
@@ -334,38 +349,48 @@ export default function SiteInvestigation() {
 
   // C. Exécute réellement la suppression (Appelée par le bouton de la modale)
   const confirmDeleteMalware = async () => {
-    if (!fileToDelete) return;
+  if (!fileToDelete) return;
 
-    const currentFile = fileToDelete;
-    setDeletingFile(currentFile);
-    setFileToDelete(null); // On ferme la modale immédiatement
+  const currentFile = fileToDelete;
+  setDeletingFile(currentFile);
+  setFileToDelete(null); // On ferme la modale immédiatement
 
-    
-
+  try {
+    let response;
     try {
-      const response = await fetch(`http://localhost:8000/api/sites/${id}/delete-file`, {
+      response = await fetch(`http://localhost:8000/api/sites/${id}/delete-file`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ file_path: currentFile })
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Erreur inconnue lors de la suppression.');
-      }
-
-      await fetchSiteInvestigations(); // On met à jour l'interface
-      showNotification('success', 'Le payload a été détruit avec succès du serveur distant.');
-
-    } catch (err) {
-      showNotification('error', `Échec de l'intervention : ${err.message}`);
-    } finally {
-      setDeletingFile(null);
+    } catch {
+      throw new Error('Impossible de joindre la plateforme FleetGuard. Vérifiez votre connexion.');
     }
-  };
+
+    // Corps non JSON (ex. page HTML d'erreur) : on continue avec null
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      // 401 = session administrateur expirée (l'agent distant n'est jamais renvoyé en 401)
+      if (response.status === 401) {
+        navigate('/login', { replace: true });
+        return;
+      }
+      throw new Error(
+        extractErrorMessage(data, `Erreur inattendue lors de l'intervention (HTTP ${response.status}).`)
+      );
+    }
+
+    await fetchSiteInvestigations(); // Rafraîchit la liste des fichiers suspects et le score
+    showNotification('success', data?.message || 'Fichier mis en quarantaine avec succès.');
+
+  } catch (err) {
+    showNotification('error', err.message);
+  } finally {
+    setDeletingFile(null);
+  }
+};
 
 
   // 5. Fonction pour archiver (résoudre) une alerte après confirmation
