@@ -55,7 +55,7 @@ export default function PublicRoute({ children }) {
   // 2. Si l'utilisateur possède déjà une session valide, on le renvoie de force vers le Dashboard
   if (isAuthenticated) {
     // ⚠️ Modifie la route cible si l'accueil de ton dashboard n'est pas "/"
-    return <Navigate to="/" replace />; 
+    return <Navigate to="/dashboard" replace />; 
   }
 
   // 3. S'il n'est pas connecté, on le laisse accéder au composant enfant (la page Login)

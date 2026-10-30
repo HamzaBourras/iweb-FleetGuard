@@ -465,7 +465,8 @@ function iweb_safe_scan_directory( $dir, &$results, $depth = 0 ) {
                 $results[] = [
                     'file'     => str_replace( ABSPATH, '', $path ),
                     'threat'   => $threat_type,
-                    'severity' => 'critical'
+                    'severity' => 'critical',
+                    'sha256' => @hash_file( 'sha256', $path ) ?: null
                 ];
             }
         }
@@ -498,7 +499,9 @@ function iweb_run_malware_scan() {
             $malicious_files[] = [
                 'file'     => 'wp-config.php',
                 'threat'   => 'Code obfusque detecte (Injection de Backdoor probable)',
-                'severity' => 'critical'
+                'severity' => 'critical',
+                'manual_only' => true,
+                'sha256'   => @hash_file( 'sha256', $wp_config_path ) ?: null,
             ];
         }
     }
@@ -535,10 +538,10 @@ function iweb_resolve_in_uploads( $file_path ) {
  */
 function iweb_delete_malicious_file( WP_REST_Request $request ) {
     $params    = $request->get_json_params();
-    $file_path = isset( $params['file_path'] ) ? sanitize_text_field( $params['file_path'] ) : '';
-
-    if ( empty( $file_path ) ) {
-        return new WP_Error( 'missing_param', 'Chemin du fichier manquant.', [ 'status' => 400 ] );
+    
+    $file_path = ( isset( $params['file_path'] ) && is_string( $params['file_path'] ) ) ? $params['file_path'] : '';
+    if ( $file_path === '' || strpos( $file_path, "\0" ) !== false ) {
+        return new WP_Error( 'missing_param', 'Chemin du fichier manquant ou invalide.', [ 'status' => 400 ] );
     }
 
     // 1. Le fichier existe-t-il ? (realpath renvoie false s'il n'existe pas)
@@ -562,8 +565,11 @@ function iweb_delete_malicious_file( WP_REST_Request $request ) {
     if ( ! wp_mkdir_p( $q ) || ! is_dir( $q ) || ! is_writable( $q ) ) {
         return new WP_Error( 'quarantine_unavailable', 'Dossier de quarantaine inaccessible (permissions).', [ 'status' => 500 ] );
     }
-    if ( ! file_exists( $q . '/.htaccess' ) ) {
-        file_put_contents( $q . '/.htaccess', 'Deny from all' );
+        if ( ! file_exists( $q . '/.htaccess' ) ) {
+        file_put_contents(
+            $q . '/.htaccess',
+            "<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n"
+        );
     }
 
     // 5. Déplacement (nom unique pour éviter les collisions)
@@ -571,6 +577,7 @@ function iweb_delete_malicious_file( WP_REST_Request $request ) {
     if ( ! @rename( $real, $q . '/' . $name ) ) {
         return new WP_Error( 'move_failed', 'Impossible de déplacer le fichier : vérifiez les permissions du serveur.', [ 'status' => 500 ] );
     }
+    @chmod( $q . '/' . $name, 0600 ); // lecture/écriture pour le propriétaire seulement
 
     // On ne renvoie PAS le chemin absolu du serveur
     return rest_ensure_response( [
@@ -586,31 +593,36 @@ function iweb_delete_malicious_file( WP_REST_Request $request ) {
  */
 function iweb_view_file_content( WP_REST_Request $request ) {
     $params = $request->get_json_params();
-    $file_path = isset( $params['file_path'] ) ? sanitize_text_field( $params['file_path'] ) : '';
 
-    if ( empty( $file_path ) ) {
-        return new WP_Error( 'missing_param', 'Chemin du fichier manquant.', [ 'status' => 400 ] );
+    $file_path = ( isset( $params['file_path'] ) && is_string( $params['file_path'] ) ) ? $params['file_path'] : '';
+    if ( $file_path === '' || strpos( $file_path, "\0" ) !== false ) {
+        return new WP_Error( 'missing_param', 'Chemin du fichier manquant ou invalide.', [ 'status' => 400 ] );
     }
 
     // Construction du chemin absolu
-    $absolute_path = ABSPATH . ltrim( $file_path, '/' );
-
-    // Sécurité : Empêcher le Path Traversal (navigation hors du dossier WordPress)
-    $real_path = realpath($absolute_path);
-    if ( $real_path === false || strpos( $real_path, ABSPATH ) !== 0 ) {
-        return new WP_Error( 'forbidden_path', 'Accès refusé : Tentative de lecture non autorisée.', [ 'status' => 403 ] );
+        // 1. Fichier inexistant -> 404
+    if ( realpath( ABSPATH . ltrim( $file_path, '/' ) ) === false ) {
+        return new WP_Error( 'not_found', 'Fichier introuvable.', [ 'status' => 404 ] );
     }
 
-    if ( ! file_exists( $real_path ) || ! is_readable( $real_path ) ) {
-        return new WP_Error( 'not_found', 'Fichier introuvable ou droits de lecture insuffisants.', [ 'status' => 404 ] );
+    // 2. Hors uploads, dossier ou illisible -> 403
+    $real = iweb_resolve_in_uploads( $file_path );
+    if ( ! $real || ! is_file( $real ) || ! is_readable( $real ) ) {
+        return new WP_Error( 'forbidden_path', 'Accès refusé.', [ 'status' => 403 ] );
     }
 
-    // Lecture du fichier (limité aux 100 premiers Ko pour éviter de saturer la mémoire de l'API)
-    $content = file_get_contents( $real_path, false, null, 0, 100000 );
+    // 3. Lecture
+    $raw = file_get_contents( $real, false, null, 0, 100000 );
+    if ( $raw === false ) {
+        return new WP_Error( 'read_failed', 'Lecture du fichier impossible.', [ 'status' => 500 ] );
+    }
 
-    return rest_ensure_response( [ 
-        'success' => true, 
-        'file_path' => $file_path,
-        'content' => $content 
+    return rest_ensure_response( [
+        'content_b64' => base64_encode( $raw ),
+        'size'        => filesize( $real ),
+        'truncated'   => filesize( $real ) > 100000,
+        'sha256'      => hash_file( 'sha256', $real ),
     ] );
+
+    
 }

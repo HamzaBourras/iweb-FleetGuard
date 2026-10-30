@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, Field
 from typing import Optional, List, Any
 from datetime import datetime
 import re
@@ -38,13 +38,14 @@ class SiteCreate(BaseModel):
         v = v.strip()
         if len(v) < 2 or len(v) > 100:
             raise ValueError("Le nom du site doit contenir entre 2 et 100 caractères.")
+        return v
 
 
 class DeleteFileRequest(BaseModel):
-    file_path: str
+    file_path: str = Field(min_length=1, max_length=500)
     
 class FileActionRequest(BaseModel):
-    file_path: str
+    file_path: str = Field(min_length=1, max_length=500)
 
 # Schéma pour recevoir la mise à jour depuis React
 class SiteSettingsUpdate(BaseModel):
@@ -77,13 +78,9 @@ class AgentPayload(BaseModel):
 
 class AdminLogin(BaseModel):
     email: str
-    password: str
-    mfa_code: Optional[str] = None # Optionnel car le frontend ne l'envoie pas au premier clic
+    password: str = Field(min_length=1, max_length=128)
+    mfa_code: Optional[str] = Field(default=None, max_length=32)  # Optionnel : absent au premier clic
 
-    @field_validator("password")  # Valide le mot de passe lors de la création de l'objet
-    @classmethod
-    def check_password_strength(cls, v):
-        return validate_password_strength(v)
 
 class Token(BaseModel):
     access_token: str
@@ -94,18 +91,13 @@ class MfaEnableRequest(BaseModel):
 
 # Schéma pour la réinitialisation du mot de passe (lorsque l'utilisateur est connecté)
 class PasswordChangeRequest(BaseModel):
-    current_password: str
+    current_password: str = Field(min_length=1, max_length=128)
     new_password: str
 
     @field_validator("new_password")  # Valide le mot de passe lors de la création de l'objet
     @classmethod
     def check_new_password(cls, v):
         return validate_password_strength(v)
-
-    @field_validator("current_password")  # Valide le mot de passe lors de la création de l'objet
-    @classmethod
-    def check_current_password(cls, v):
-        return validate_password_strength(v) 
 
 
 class RecoveryCodesRequest(BaseModel):

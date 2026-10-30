@@ -52,8 +52,7 @@ export default function ResetPassword() {
     }
 
 
-    setIsLoading(true);
-
+    
     if (mfaRequired) {
       if (useRecovery && mfaCode.length < 14) {
         setError("Le code de secours semble incomplet.");
@@ -64,6 +63,8 @@ export default function ResetPassword() {
         return;
       }
     }
+    
+    setIsLoading(true);
 
     try {
       const response = await fetch('http://localhost:8000/api/auth/reset-password', {

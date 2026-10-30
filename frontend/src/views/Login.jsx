@@ -248,7 +248,7 @@ export default function Login() {
           body: JSON.stringify(body),
         });
       } catch {
-        setError('Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.');
+        setError('Impossible de se connecter. Réessayez plus tard.');
         return;
       }
 

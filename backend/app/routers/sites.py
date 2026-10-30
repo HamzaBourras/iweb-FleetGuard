@@ -12,6 +12,7 @@ Description :
 ===============================================================================
 """
 
+import base64
 import os
 import secrets
 import time
@@ -450,9 +451,10 @@ async def run_malware_scan(
         site.last_scan_at = datetime.utcnow()
 
         malwares_detectes = scan_data.get("malware_scan", [])
-        liste_blanche = site.whitelisted_files or []
-
-        menaces_reelles = [m for m in malwares_detectes if m['file'] not in liste_blanche]
+        
+        whitelisted = {(w.get('file'), w.get('sha256')) for w in (site.whitelisted_files or []) if isinstance(w, dict) and w.get('sha256')}
+        menaces_reelles = [m for m in malwares_detectes if not (m.get('sha256') and (m['file'], m['sha256']) in whitelisted)]
+        
         site.malware_report = menaces_reelles
 
         if len(menaces_reelles) > 0:
@@ -528,13 +530,12 @@ async def delete_malicious_file(
     if not site:
         raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
 
-    # (Guide 3.4) Seuls les fichiers du dernier rapport de scan peuvent être traités
-    reported = {f.get("file") for f in (site.malware_report or [])}
-    if payload.file_path not in reported:
-        raise HTTPException(
-            status_code=403,
-            detail="Ce fichier ne figure pas dans le dernier rapport de scan. Relancez une analyse."
-        )
+    # Seuls les fichiers du dernier rapport de scan peuvent être traités
+    entry = next((f for f in (site.malware_report or []) if f.get("file") == payload.file_path), None)
+    if not entry:
+        raise HTTPException(status_code=403, detail="Ce fichier ne figure pas dans le dernier rapport de scan. Relancez une analyse.")
+    if entry.get("manual_only"):
+        raise HTTPException(status_code=400, detail="Ce fichier doit être nettoyé manuellement via SFTP.")
 
     try:
         decrypted_token = security.decrypt_token(site.secret_token)
@@ -663,10 +664,19 @@ def whitelist_site_file(
     if site.whitelisted_files is None:
         site.whitelisted_files = []
 
-    if payload.file_path not in site.whitelisted_files:
-        current_whitelist = list(site.whitelisted_files)
-        current_whitelist.append(payload.file_path)
-        site.whitelisted_files = current_whitelist
+    entry = next((f for f in (site.malware_report or []) if f.get('file') == payload.file_path), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail='Fichier absent du rapport.')
+
+    if not entry.get('sha256'):
+        raise HTTPException(status_code=400, detail="Empreinte absente : mettez à jour l'agent puis relancez un scan.")
+
+    item = {'file': entry['file'], 'sha256': entry.get('sha256')}
+
+    current = list(site.whitelisted_files or [])
+    if item not in current:
+        current.append(item)
+    site.whitelisted_files = current
 
     if site.malware_report:
         updated_report = [
@@ -700,6 +710,13 @@ async def view_malicious_file(
         if not site:
             raise HTTPException(status_code=404, detail="Cible introuvable.")
 
+        # Vérification que le fichier est bien dans le dernier rapport de scan
+        entry = next((f for f in (site.malware_report or []) if f.get("file") == payload.file_path), None)
+        if not entry:
+            raise HTTPException(status_code=403, detail="Ce fichier ne figure pas dans le dernier rapport de scan. Relancez une analyse.")
+        if entry.get("manual_only"):
+            raise HTTPException(status_code=400, detail="Ce fichier doit être nettoyé manuellement via SFTP.")
+
         base_url = site.url.rstrip('/')
         view_endpoint = f"{base_url}/wp-json/iwebcreative/v1/view-file"
         
@@ -708,27 +725,49 @@ async def view_malicious_file(
         except Exception:
             raise HTTPException(status_code=500, detail="Erreur de déchiffrement du jeton.")
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                view_endpoint,
-                headers={"Authorization": f"Bearer {decrypted_token}"},
-                json={"file_path": payload.file_path}
-            )
-            
-            if response.status_code == 401:
-                raise HTTPException(status_code=401, detail="Jeton de sécurité invalide.")
-            
-            if response.status_code != 200:
-                err_data = response.json()
-                err_msg = err_data.get('message', 'Échec de la lecture sur le serveur distant.')
-                raise HTTPException(status_code=response.status_code, detail=err_msg)
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.post(
+                        view_endpoint,
+                        headers={"Authorization": f"Bearer {decrypted_token}"},
+                        json={"file_path": payload.file_path}
+                    )
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Délai dépassé : le site distant n'a pas répondu.")
+        except httpx.RequestError:
+                raise HTTPException(status_code=503, detail="Impossible de joindre le site distant.")
 
-        return response.json()
+        if response.status_code != 200:
+            # 401/500 de l'agent -> 502 : un 401 laisserait croire que la session admin a expiré
+            code = 502 if response.status_code in (401, 500) else response.status_code
+            raise HTTPException(
+                status_code=code,
+                detail=_agent_message(response) or f"Échec de la lecture (HTTP {response.status_code})."
+            )
+
+        try:
+            data = response.json()
+        except ValueError:
+            raise HTTPException(status_code=502, detail="Réponse illisible de l'agent distant.")
+
+        content_b64 = data.get('content_b64')
+        if content_b64 is None:
+            raise HTTPException(status_code=502, detail="Réponse inattendue : mettez l'agent à jour sur ce site.")
+
+        content = base64.b64decode(content_b64).decode('utf-8', errors='replace')
+        return {
+            'success': True,
+            'file_path': payload.file_path,
+            'content': content,
+            'truncated': data.get('truncated'),
+            'sha256': data.get('sha256'),
+        }
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Erreur lors de la lecture du fichier (site %s)", site_id)
+        raise HTTPException(status_code=500, detail="Erreur interne lors de la lecture du fichier.")
 
 # =====================================================================
 # SECTIONS : GESTION DES ALERTES LIÉES AU SITE

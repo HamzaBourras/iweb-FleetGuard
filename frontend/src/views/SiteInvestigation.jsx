@@ -167,7 +167,7 @@ export default function SiteInvestigation() {
 
   // 1. Fonction pour charger les données de l'actif depuis FastAPI
   const fetchSiteInvestigations = async () => {
-    
+
     try {
       // On lance les deux requêtes en parallèle pour gagner du temps
       const [siteRes, alertsRes] = await Promise.all([
@@ -211,7 +211,7 @@ export default function SiteInvestigation() {
   // 🧠 Renseignement sur les menaces : Récupération depuis le proxy sécurisé FastAPI
   useEffect(() => {
     const fetchThreatIntel = async () => {
-      
+
       try {
         const response = await fetch('http://localhost:8000/api/sites/threat-intel', {
           credentials: 'include'
@@ -253,7 +253,7 @@ export default function SiteInvestigation() {
   // 2. Fonction pour déclencher un scan actif (Active Scanning)
   const handleScan = async () => {
     setIsScanning(true);
-    
+
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/scan`, {
         method: 'POST',
@@ -287,7 +287,7 @@ export default function SiteInvestigation() {
   // 3. Fonction pour déclencher le scanner anti-malware
   const handleMalwareScan = async () => {
     setIsScanningMalware(true);
-    
+
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/malware-scan`, {
@@ -349,48 +349,48 @@ export default function SiteInvestigation() {
 
   // C. Exécute réellement la suppression (Appelée par le bouton de la modale)
   const confirmDeleteMalware = async () => {
-  if (!fileToDelete) return;
+    if (!fileToDelete) return;
 
-  const currentFile = fileToDelete;
-  setDeletingFile(currentFile);
-  setFileToDelete(null); // On ferme la modale immédiatement
+    const currentFile = fileToDelete;
+    setDeletingFile(currentFile);
+    setFileToDelete(null); // On ferme la modale immédiatement
 
-  try {
-    let response;
     try {
-      response = await fetch(`http://localhost:8000/api/sites/${id}/delete-file`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ file_path: currentFile })
-      });
-    } catch {
-      throw new Error('Impossible de joindre la plateforme FleetGuard. Vérifiez votre connexion.');
-    }
-
-    // Corps non JSON (ex. page HTML d'erreur) : on continue avec null
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      // 401 = session administrateur expirée (l'agent distant n'est jamais renvoyé en 401)
-      if (response.status === 401) {
-        navigate('/login', { replace: true });
-        return;
+      let response;
+      try {
+        response = await fetch(`http://localhost:8000/api/sites/${id}/delete-file`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ file_path: currentFile })
+        });
+      } catch {
+        throw new Error('Impossible de joindre la plateforme FleetGuard. Vérifiez votre connexion.');
       }
-      throw new Error(
-        extractErrorMessage(data, `Erreur inattendue lors de l'intervention (HTTP ${response.status}).`)
-      );
+
+      // Corps non JSON (ex. page HTML d'erreur) : on continue avec null
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        // 401 = session administrateur expirée (l'agent distant n'est jamais renvoyé en 401)
+        if (response.status === 401) {
+          navigate('/login', { replace: true });
+          return;
+        }
+        throw new Error(
+          extractErrorMessage(data, `Erreur inattendue lors de l'intervention (HTTP ${response.status}).`)
+        );
+      }
+
+      await fetchSiteInvestigations(); // Rafraîchit la liste des fichiers suspects et le score
+      showNotification('success', data?.message || 'Fichier mis en quarantaine avec succès.');
+
+    } catch (err) {
+      showNotification('error', err.message);
+    } finally {
+      setDeletingFile(null);
     }
-
-    await fetchSiteInvestigations(); // Rafraîchit la liste des fichiers suspects et le score
-    showNotification('success', data?.message || 'Fichier mis en quarantaine avec succès.');
-
-  } catch (err) {
-    showNotification('error', err.message);
-  } finally {
-    setDeletingFile(null);
-  }
-};
+  };
 
 
   // 5. Fonction pour archiver (résoudre) une alerte après confirmation
@@ -401,7 +401,7 @@ export default function SiteInvestigation() {
     setResolvingAlert(currentAlertId); // Lance l'animation de chargement
     setAlertToResolve(null); // Ferme la modale immédiatement
 
-    
+
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/alerts/${currentAlertId}/resolve`, {
@@ -434,7 +434,7 @@ export default function SiteInvestigation() {
   // 6. Fonction pour la rotation du token (Key Rotation)
   const handleRegenerateToken = async () => {
     setIsResettingToken(true);
-    
+
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/regenerate-token`, {
         method: 'POST',
@@ -473,7 +473,7 @@ export default function SiteInvestigation() {
     setWhitelistingFile(currentFile); // Lance l'animation de chargement
     setFileToWhitelist(null); // Ferme la modale immédiatement
 
-    
+
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/whitelist-file`, {
@@ -481,7 +481,7 @@ export default function SiteInvestigation() {
         headers: {
           'Content-Type': 'application/json'
         },
-         credentials: 'include',
+        credentials: 'include',
         body: JSON.stringify({ file_path: currentFile })
       });
 
@@ -505,7 +505,7 @@ export default function SiteInvestigation() {
   const confirmToggleAutoScan = async () => {
     setIsTogglingAutoScan(true); // Active le spinner du bouton
     const newValue = !site.auto_scan_enabled;
-    
+
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/settings`, {
@@ -522,8 +522,8 @@ export default function SiteInvestigation() {
       // Mise à jour de l'UI et fermeture de la modale
       setSite({ ...site, auto_scan_enabled: newValue });
       showNotification('success', `Scan automatique ${newValue ? 'activé (Toutes les 24h)' : 'désactivé'}.`);
-      setShowAutoScanModal(false); 
-      
+      setShowAutoScanModal(false);
+
     } catch (err) {
       showNotification('error', "Impossible de modifier la configuration.");
       setShowAutoScanModal(false);
@@ -1127,12 +1127,23 @@ export default function SiteInvestigation() {
                     <p className="font-mono text-sm text-red-600 mt-1 bg-white px-2 py-1 rounded border border-red-100 w-fit shadow-sm break-all">
                       {file.file}
                     </p>
+                    {file.manual_only && (
+                      <p className="mt-2 flex items-start gap-1.5 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 max-w-xl">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
+                        <span>
+                          Nettoyage manuel requis : ce fichier de configuration est hors du dossier uploads
+                          et ne peut pas être inspecté ni mis en quarantaine depuis la plateforme.
+                          Ouvrez-le via SFTP, retirez le code suspect, puis relancez un scan.
+                        </span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Boutons d'action (Whitelist + Destruction) */}
                   <div className="flex flex-wrap items-center gap-2 shrink-0 mt-2 md:mt-0">
 
                     {/* Bouton Inspecter le code */}
+                    {!file.manual_only && (
                     <button
                       onClick={() => handleInspectFile(file.file)}
                       title="Inspecter le code source du fichier"
@@ -1141,6 +1152,7 @@ export default function SiteInvestigation() {
                       <Eye className="w-4 h-4" />
                       <span className="whitespace-nowrap">Inspecter</span>
                     </button>
+                    )}
 
                     {/* Bouton Ignorer / Faux Positif */}
                     <button
@@ -1158,6 +1170,7 @@ export default function SiteInvestigation() {
                     </button>
 
                     {/* Bouton Destruction */}
+                    {!file.manual_only && (
                     <button
                       onClick={() => initiateDelete(file.file)}
                       disabled={deletingFile === file.file || whitelistingFile === file.file}
@@ -1169,6 +1182,7 @@ export default function SiteInvestigation() {
                         'Détruire'
                       )}
                     </button>
+                    )}
 
                   </div>
                 </div>
@@ -1214,7 +1228,7 @@ export default function SiteInvestigation() {
               </div>
               <div>
                 <h3 className="text-xl font-black text-red-800">Intervention Critique</h3>
-                <p className="text-red-600 text-sm mt-1">Vous êtes sur le point de détruire définitivement ce fichier sur le serveur distant.</p>
+                <p className="text-red-600 text-sm mt-1">Vous êtes sur le point de déplacer ce fichier vers la quarantaine.</p>
               </div>
             </div>
             <div className="p-6 bg-white">
@@ -1222,9 +1236,9 @@ export default function SiteInvestigation() {
               <p className="font-mono text-sm text-red-600 bg-red-50 px-3 py-2 rounded border border-red-100 break-all shadow-inner">
                 {fileToDelete}
               </p>
-              <p className="text-slate-500 text-sm mt-4 font-medium flex items-center gap-2">
+              {/* <p className="text-slate-500 text-sm mt-4 font-medium flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" /> Cette action est irréversible.
-              </p>
+              </p> */}
             </div>
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
               <button
@@ -1237,7 +1251,7 @@ export default function SiteInvestigation() {
                 onClick={confirmDeleteMalware}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2"
               >
-                <FileWarning className="w-4 h-4" /> Confirmer la destruction
+                <FileWarning className="w-4 h-4" /> Confirmer le déplacement
               </button>
             </div>
           </div>
@@ -1524,7 +1538,7 @@ export default function SiteInvestigation() {
       {showAutoScanModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden scale-100 transition-transform">
-            
+
             <div className={`p-6 border-b flex items-start gap-4 ${!site?.auto_scan_enabled ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
               <div className={`p-3 rounded-full shrink-0 ${!site?.auto_scan_enabled ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
                 {!site?.auto_scan_enabled ? <CheckCircle2 className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
@@ -1558,9 +1572,8 @@ export default function SiteInvestigation() {
               <button
                 onClick={confirmToggleAutoScan}
                 disabled={isTogglingAutoScan}
-                className={`px-4 py-2 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2 ${
-                  !site?.auto_scan_enabled ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
-                }`}
+                className={`px-4 py-2 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2 ${!site?.auto_scan_enabled ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
+                  }`}
               >
                 {isTogglingAutoScan ? (
                   <><RefreshCw className="w-4 h-4 animate-spin" /> Traitement...</>
