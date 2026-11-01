@@ -51,7 +51,7 @@ def get_current_admin(request: Request, db: Session = Depends(get_db)):
         
     # 3. On vérifie que l'admin existe toujours en BDD
     admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == email).first()
-    if admin is None:
+    if admin is None or not admin.is_active:
         raise HTTPException(status_code=401, detail="Administrateur introuvable")
         
     return admin
