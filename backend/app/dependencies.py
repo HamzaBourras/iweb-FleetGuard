@@ -41,6 +41,8 @@ def get_current_admin(request: Request, db: Session = Depends(get_db)):
     try:
         # 2. On utilise ta clé secrète pour décoder
         payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
+        if payload.get('type') != 'access':
+            raise HTTPException(status_code=401, detail='Token invalide')
         email: str = payload.get("sub")
         if email is None:
             raise HTTPException(status_code=401, detail="Token invalide")

@@ -14,7 +14,7 @@ Description :
 
 import bcrypt
 from jose import jwt, JWTError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 from cryptography.fernet import Fernet
 
@@ -62,19 +62,11 @@ def get_password_hash(password):
 # ---------------------------------------------------------
 # 4. Fonction de création du Token JWT
 # ---------------------------------------------------------
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    """Génère le badge d'accès cryptographique (JWT)"""
-    to_encode = data.copy()
-    
-    # ✨ NOUVEAU : Si une durée spécifique est demandée, on l'utilise
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+def create_access_token(data: dict, expires_delta: timedelta = None, token_type: str = 'access'):
+    now = datetime.now(timezone.utc)
+    expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode = {**data, 'type': token_type, 'iat': now, 'exp': expire}
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 # ---------------------------------------------------------

@@ -382,7 +382,8 @@ def forgot_password(
                     "role": "reset_password",
                     "fingerprint": pwd_fingerprint
                 },
-                expires_delta=timedelta(minutes=30)
+                expires_delta=timedelta(minutes=30),
+                token_type='reset'
             )
             
             reset_link = f"http://localhost:5173/reset-password?token={reset_token}"
@@ -411,6 +412,8 @@ def reset_password(request: Request, payload: schemas.ResetPasswordRequest, db: 
     
     if not decoded_data or decoded_data.get("role") != "reset_password":
         raise HTTPException(status_code=400, detail="Lien invalide ou expiré.")
+    if not decoded_data or decoded_data.get('type') != 'reset':
+        raise HTTPException(status_code=400, detail='Lien invalide ou expiré.')
         
     admin_email = decoded_data.get("sub")
     admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == admin_email).first()
