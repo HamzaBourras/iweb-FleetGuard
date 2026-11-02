@@ -6,17 +6,9 @@
 ![Security](https://img.shields.io/badge/SecOps-Active-success.svg)
 
 **iweb FleetGuard** est une architecture SecOps sur-mesure et une plateforme de surveillance centralisée conçue pour sécuriser et auditer un parc complet d'applications e-commerce et vitrines sous WordPress. 
-
 Ce projet permet de passer d'une sécurité réactive (site par site) à une posture proactive et centralisée, garantissant l'intégrité des données clients et la réputation de l'agence.
 
 ---
-C'est une excellente déduction ! Puisque tu viens d'ajouter un fichier `.env.example` complet (avec la base de données, le SMTP, etc.), ton ancienne méthode qui ajoutait juste la clé à la fin d'un fichier vide n'est plus adaptée.
-
-Il faut maintenant indiquer aux utilisateurs de copier le fichier d'exemple, puis de générer la clé pour remplacer la valeur par défaut.
-
-Voici la version mise à jour, parfaite et professionnelle, à copier-coller dans ton `README.md` :
-
-
 ### ⚙️ Installation & Démarrage rapide
 
 1. **Cloner le dépôt :**
@@ -32,8 +24,6 @@ Copiez le fichier d'exemple pour créer votre propre fichier `.env` :
 ```bash
 cp .env.example .env
 ```
-
-
 
 Ouvrez ensuite le fichier `.env` avec votre éditeur pour configurer vos accès PostgreSQL et vos identifiants SMTP.*
 3. **Génération de la clé cryptographique maîtresse :**

@@ -19,6 +19,7 @@ from sqlalchemy.ext.declarative import declarative_base
 # Configuration de la connexion à la Base de Données PostgreSQL
 # Force la lecture du fichier .env
 load_dotenv()
+
 POSTGRES_USER = os.getenv("POSTGRES_USER")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 POSTGRES_DB = os.getenv("POSTGRES_DB")

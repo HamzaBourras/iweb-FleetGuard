@@ -123,7 +123,7 @@ class ForgotPasswordRequest(BaseModel):
 
 # Schéma pour la réinitialisation du mot de passe (s'il est oublié)
 class ResetPasswordRequest(BaseModel):
-    token: str
+    token: str = Field(min_length=20, max_length=200)
     new_password: str
     mfa_code: Optional[str] = None
 
@@ -131,3 +131,6 @@ class ResetPasswordRequest(BaseModel):
     @classmethod
     def check_new_password(cls, v):
         return validate_password_strength(v)
+
+class ResetTokenCheck(BaseModel):
+    token: str = Field(min_length=20, max_length=200)

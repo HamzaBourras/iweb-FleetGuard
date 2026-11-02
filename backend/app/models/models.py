@@ -14,7 +14,7 @@ Description :
 import os
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator, JSON, Boolean, Text
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from cryptography.fernet import Fernet
 
 # On importe l'objet Base que nous avons préparé dans main.py
@@ -89,7 +89,7 @@ class SecurityAlert(Base):
     __tablename__ = "security_alerts"
 
     id = Column(Integer, primary_key=True, index=True)
-    site_id = Column(Integer, ForeignKey("client_sites.id"), nullable=False) 
+    site_id = Column(Integer, ForeignKey("client_sites.id", ondelete="CASCADE"), nullable=False) 
     
     event_type = Column(String, index=True) 
     severity = Column(String)               
@@ -161,3 +161,14 @@ class Notification(Base):
     # Permet d'accéder facilement à notification.site ou notification.admin dans FastAPI
     site = relationship("ClientSite")
     admin = relationship("DashboardAdmin")
+
+
+class PasswordResetToken(Base):
+    __tablename__ = 'password_reset_tokens'
+
+    id = Column(Integer, primary_key=True)
+    admin_id = Column(Integer, ForeignKey('dashboard_admins.id', ondelete='CASCADE'), index=True, nullable=False)
+    token_hash = Column(String(64), unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

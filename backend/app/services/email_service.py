@@ -13,17 +13,23 @@ Description :
 
 import os
 import smtplib
+from pathlib import Path
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formatdate, make_msgid # ✨ NOUVEAU : Import pour les en-têtes standards
 from dotenv import load_dotenv
 
-load_dotenv()
+# The backend can be started from either the repository root or backend/.
+# Resolve the repository-level .env explicitly so local runs use the same
+# configuration as Docker Compose, which injects these values as environment
+# variables.
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173').rstrip('/')
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", SMTP_USERNAME)
 
 def send_soc_email(destinataire: str, sujet: str, type_alerte: str, message_alerte: str):
@@ -114,7 +120,7 @@ def send_soc_email(destinataire: str, sujet: str, type_alerte: str, message_aler
                     <table width="100%" border="0" cellspacing="0" cellpadding="0">
                         <tr>
                             <td align="center">
-                                <a href="http://localhost:5173/dashboard" style="background-color: {couleur_theme}; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block; text-transform: uppercase; letter-spacing: 0.5px;">
+                                <a href="{FRONTEND_URL}/dashboard" style="background-color: {couleur_theme}; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block; text-transform: uppercase; letter-spacing: 0.5px;">
                                     Ouvrir la Console SOC
                                 </a>
                             </td>

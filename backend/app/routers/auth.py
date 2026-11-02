@@ -16,8 +16,9 @@ import secrets
 import pyotp
 from fastapi import APIRouter, Depends, HTTPException, Response, BackgroundTasks, Request
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.rate_limit import limiter
+import hashlib
 
 # Import des modèles, schémas et utilitaires de sécurité
 import app.models.models as models
@@ -346,87 +347,98 @@ def change_password(
     return {"message": "Votre mot de passe a été modifié avec succès."}
 
 # --- ROUTE : DEMANDE DE RÉINITIALISATION (FORGOT PASSWORD) ---
-@router.post("/forgot-password")
-@limiter.limit("3/hour") # Limitation stricte pour éviter les abus
+FORGOT_PASSWORD_ATTEMPTS = {}   # { 'email': [datetime, ...] }
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173').rstrip('/')
+RESET_TOKEN_TTL = timedelta(minutes=30)
+NEUTRAL_MSG = 'Si cette adresse existe, un email contenant les instructions a été envoyé.'
+
+@router.post('/forgot-password')
+@limiter.limit('3/hour')
 def forgot_password(
     request: Request,
-    payload: schemas.ForgotPasswordRequest, 
-    background_tasks: BackgroundTasks, 
+    payload: schemas.ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    # 1. Rate Limiting par email pour éviter les abus
-    FORGOT_PASSWORD_ATTEMPTS = {} # { "email": [timestamp, ...] }
-
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     email_key = payload.email.lower().strip()
 
     attempts = [t for t in FORGOT_PASSWORD_ATTEMPTS.get(email_key, []) if now - t < timedelta(hours=1)]
     if len(attempts) >= 3:
-    # On renvoie le même message neutre pour ne pas révéler qu'on limite spécifiquement cet email
-        return {"message": "Si cette adresse existe, un email contenant les instructions a été envoyé."}
-    
+        return {'message': NEUTRAL_MSG}      # même réponse : on ne révèle rien
     attempts.append(now)
     FORGOT_PASSWORD_ATTEMPTS[email_key] = attempts
 
-    try:
-        admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == payload.email).first()
-        
-        if admin:
-            # ✨ SÉCURITÉ : Empreinte du mot de passe actuel
-            pwd_fingerprint = admin.hashed_password[-10:] if admin.hashed_password else "none"
+    admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == payload.email.strip()).first()
 
-            # Création avec le rôle, l'empreinte, et une durée stricte de 30 minutes
-            reset_token = security.create_access_token(
-                data={
-                    "sub": admin.email, 
-                    "role": "reset_password",
-                    "fingerprint": pwd_fingerprint
-                },
-                expires_delta=timedelta(minutes=30),
-                token_type='reset'
-            )
-            
-            reset_link = f"http://localhost:5173/reset-password?token={reset_token}"
-            
-            background_tasks.add_task(
-                send_soc_email,
-                destinataire=admin.email,
-                sujet="Demande de réinitialisation de mot de passe",
-                type_alerte="Sécurité Compte",
-                message_alerte=f"Cliquez sur ce lien pour configurer un nouveau mot de passe (valide 30 min) : {reset_link}"
-            )
+    if admin and admin.is_active:
+        # Un seul lien valide à la fois : on invalide les précédents
+        db.query(models.PasswordResetToken).filter(
+            models.PasswordResetToken.admin_id == admin.id,
+            models.PasswordResetToken.used_at.is_(None)
+        ).update({'used_at': now}, synchronize_session=False)
 
-        return {"message": "Si cette adresse existe, un email contenant les instructions a été envoyé."}
-        
-    except Exception as e:
-        import traceback
-        print("\n🚨 ERREUR FORGOT PASSWORD 🚨\n", traceback.format_exc())
-        raise HTTPException(status_code=500, detail="Erreur interne du serveur.")
-    
+        raw = secrets.token_urlsafe(32)
+        db.add(models.PasswordResetToken(
+            admin_id=admin.id,
+            token_hash=hashlib.sha256(raw.encode()).hexdigest(),
+            expires_at=now + RESET_TOKEN_TTL
+        ))
+        db.commit()
+
+        reset_link = f'{FRONTEND_URL}/reset-password#token={raw}'
+        background_tasks.add_task(
+            send_soc_email,
+            destinataire=admin.email,
+            sujet='Demande de réinitialisation de mot de passe',
+            type_alerte='Sécurité Compte',
+            message_alerte=f'Ouvrez ce lien pour choisir un nouveau mot de passe (valide 30 min, usage unique) : {reset_link}'
+        )
+
+    return {'message': NEUTRAL_MSG}
+
 # --- ROUTE : VALIDATION DU NOUVEAU MOT DE PASSE LORSQU'IL EST OUBLIÉ ---
+@router.post('/reset-password/validate')
+@limiter.limit('20/minute')
+def validate_reset_token(
+    request: Request,
+    payload: schemas.ResetTokenCheck,
+    db: Session = Depends(get_db)
+):
+    now = datetime.now(timezone.utc)
+    token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
+
+    reset = db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.token_hash == token_hash,
+        models.PasswordResetToken.used_at.is_(None),
+        models.PasswordResetToken.expires_at > now
+    ).first()
+
+    if not reset:
+        raise HTTPException(status_code=400, detail='Lien invalide, expiré ou déjà utilisé.')
+    return {'valid': True}
+
+
 @router.post("/reset-password")
 @limiter.limit("5/minute") # Limitation stricte pour éviter les abus
-def reset_password(request: Request, payload: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
-    # 1. Décodage et vérification de la signature
-    decoded_data = security.decode_access_token(payload.token) 
-    
-    if not decoded_data or decoded_data.get("role") != "reset_password":
-        raise HTTPException(status_code=400, detail="Lien invalide ou expiré.")
-    if not decoded_data or decoded_data.get('type') != 'reset':
-        raise HTTPException(status_code=400, detail='Lien invalide ou expiré.')
-        
-    admin_email = decoded_data.get("sub")
-    admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == admin_email).first()
-    
-    if not admin:
-        raise HTTPException(status_code=404, detail="Compte introuvable.")
+def reset_password(request: Request, payload: schemas.ResetPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
 
-    # ✨ 2. SÉCURITÉ : VÉRIFICATION DE L'USAGE UNIQUE
-    current_fingerprint = admin.hashed_password[-10:] if admin.hashed_password else "none"
-    if decoded_data.get("fingerprint") != current_fingerprint:
-        raise HTTPException(status_code=400, detail="Ce lien de réinitialisation a déjà été utilisé.")
+    reset = db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.token_hash == token_hash,
+        models.PasswordResetToken.used_at.is_(None),
+        models.PasswordResetToken.expires_at > now
+    ).first()
 
-    # ✨ 3. VERROU MFA (MULTI-FACTOR AUTHENTICATION) 
+    if not reset:
+        raise HTTPException(status_code=400, detail='Lien invalide, expiré ou déjà utilisé.')
+
+    admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.id == reset.admin_id).first()
+    if not admin or not admin.is_active:
+        raise HTTPException(status_code=400, detail='Lien invalide, expiré ou déjà utilisé.')
+   
+    # 3. VERROU MFA (MULTI-FACTOR AUTHENTICATION) 
     if admin.mfa_enabled:
         if not payload.mfa_code:
             raise HTTPException(status_code=403, detail="MFA_REQUIRED")
@@ -458,8 +470,24 @@ def reset_password(request: Request, payload: schemas.ResetPasswordRequest, db: 
         if not is_valid_totp and not is_valid_recovery:
             raise HTTPException(status_code=401, detail="Code MFA ou de secours invalide")
 
-    # 4. Validation réussie : on écrase l'ancien mot de passe
+    # Le jeton n'est PAS consommé tant que le MFA n'est pas validé : le front rappelle la route avec le code.
+
+    # Succès : tout dans la même transaction
     admin.hashed_password = security.get_password_hash(payload.new_password)
+    reset.used_at = now
+    db.add(models.Notification(
+        type='mot de passe modifié',
+        title='Mot de passe réinitialisé',
+        message='Le mot de passe de votre compte a été réinitialisé via le lien de récupération.',
+        admin_id=admin.id
+    ))
     db.commit()
 
-    return {"message": "Votre mot de passe a été modifié avec succès."}
+    background_tasks.add_task(
+        send_soc_email,
+        destinataire=admin.email,
+        sujet='Votre mot de passe a été réinitialisé',
+        type_alerte='Mot de passe modifié',
+        message_alerte="Le mot de passe de votre compte a été réinitialisé. Si vous n'êtes pas à l'origine de cette action, votre compte est potentiellement compromis."
+    )
+    return {'message': 'Votre mot de passe a été modifié avec succès.'}
