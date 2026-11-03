@@ -39,11 +39,49 @@ class SiteCreate(BaseModel):
         return v
 
 
-class DeleteFileRequest(BaseModel):
+class _FilePathRequest(BaseModel):
     file_path: str = Field(min_length=1, max_length=500)
-    
-class FileActionRequest(BaseModel):
-    file_path: str = Field(min_length=1, max_length=500)
+
+    @field_validator("file_path")
+    @classmethod
+    def reject_traversal(cls, value: str) -> str:
+        parts = value.replace(chr(92), "/").split("/")
+        if chr(0) in value or value.startswith("/") or ".." in parts:
+            raise ValueError("Chemin de fichier invalide.")
+        return value
+
+
+class DeleteFileRequest(_FilePathRequest):
+    pass
+
+
+class FileActionRequest(_FilePathRequest):
+    pass
+
+
+class SiteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    site_name: Optional[str] = None
+    url: str
+    deleted_at: Optional[datetime] = None
+    health_score: Optional[int] = 100
+    alerts_count: int = 0
+    malware_report: Optional[List[dict]] = None
+    last_seen: Optional[datetime] = None
+
+
+class AlertOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_type: Optional[str] = None
+    severity: Optional[str] = None
+    message: Optional[str] = None
+    ip_address: Optional[str] = None
+    timestamp: datetime
+    status: Optional[str] = None
 
 class SiteResponse(BaseModel):
     # Envoi au frontend

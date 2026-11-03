@@ -19,7 +19,7 @@ import time
 import httpx
 import traceback
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from sqlalchemy.orm import Session, selectinload
@@ -83,17 +83,12 @@ def recalculate_health_score(site, db: Session):
 
 
 # --- ROUTE : RÉCUPÉRATION DE TOUS LES SITES ---
-@router.get("")
+@router.get("", response_model=List[schemas.SiteOut])
 def get_all_sites(
     admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
-    # 1. NETTOYAGE AUTOMATIQUE : Suppression des sites en attente depuis plus de 12h
-    limite_retention = datetime.utcnow() - timedelta(hours=12)
-    db.query(models.ClientSite).filter(models.ClientSite.deleted_at < limite_retention).delete()
-    db.commit()
-
-    # 2. RÉCUPÉRATION DES SITES ET DE LEURS ALERTES
+    # RÉCUPÉRATION DES SITES ET DE LEURS ALERTES
     sites = db.query(models.ClientSite).options(
         selectinload(models.ClientSite.alerts) 
     ).all()
@@ -134,14 +129,10 @@ def create_site(
     # 1. Génération du token en clair
     raw_token = f"IWEB_{secrets.token_urlsafe(32)}"
     
-    # 2. Chiffrement symétrique
-    encrypted_token = security.encrypt_token(raw_token)
-    
-    # 3. Sauvegarde dans PostgreSQL
     nouveau_site = models.ClientSite(
         site_name=site_data.site_name,
         url=site_data.url,
-        secret_token=encrypted_token 
+        secret_token=raw_token
     )
     
     db.add(nouveau_site)
@@ -213,7 +204,7 @@ async def ping_site_agent(
     status_endpoint = f"{base_url}/wp-json/iwebcreative/v1/status?nocache={timestamp_actuel}"
 
     try:
-        decrypted_token = security.decrypt_token(site.secret_token)
+        decrypted_token = site.secret_token
     except Exception:
         raise HTTPException(status_code=500, detail="Jeton illisible.")
 
@@ -315,9 +306,7 @@ def regenerate_site_token(
         raise HTTPException(status_code=404, detail="Cible introuvable.")
 
     raw_token = f"IWEB_{secrets.token_urlsafe(32)}"
-    encrypted_token = security.encrypt_token(raw_token)
-
-    site.secret_token = encrypted_token 
+    site.secret_token = raw_token
     db.commit()
     db.refresh(site)
 
@@ -373,7 +362,7 @@ async def scan_site(
     health_endpoint = f"{base_url}/wp-json/iwebcreative/v1/health?nocache={timestamp_actuel}"
 
     try:
-        decrypted_token = security.decrypt_token(site.secret_token)
+        decrypted_token = site.secret_token
     except Exception:
         raise HTTPException(status_code=500, detail="Erreur interne : Impossible de déchiffrer le jeton de l'actif.")
 
@@ -434,7 +423,7 @@ async def run_malware_scan(
         scan_endpoint = f"{base_url}/wp-json/iwebcreative/v1/malware-scan?nocache={timestamp_actuel}"
 
         try:
-            decrypted_token = security.decrypt_token(site.secret_token)
+            decrypted_token = site.secret_token
         except Exception:
             raise HTTPException(status_code=500, detail="Impossible de déchiffrer le jeton de l'actif.")
 
@@ -538,7 +527,7 @@ async def delete_malicious_file(
         raise HTTPException(status_code=400, detail="Ce fichier doit être nettoyé manuellement via SFTP.")
 
     try:
-        decrypted_token = security.decrypt_token(site.secret_token)
+        decrypted_token = site.secret_token
     except Exception:
         logger.exception("Déchiffrement du jeton impossible pour le site %s", site_id)
         raise HTTPException(status_code=500, detail="Erreur interne : jeton de l'actif illisible.")
@@ -721,7 +710,7 @@ async def view_malicious_file(
         view_endpoint = f"{base_url}/wp-json/iwebcreative/v1/view-file"
         
         try:
-            decrypted_token = security.decrypt_token(site.secret_token)
+            decrypted_token = site.secret_token
         except Exception:
             raise HTTPException(status_code=500, detail="Erreur de déchiffrement du jeton.")
 

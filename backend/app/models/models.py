@@ -12,7 +12,18 @@ Description :
 """
 
 import os
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, TypeDecorator, JSON, Boolean, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    TypeDecorator,
+)
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from cryptography.fernet import Fernet
@@ -33,6 +44,7 @@ class EncryptedString(TypeDecorator):
     et la déchiffrer automatiquement quand Python la lira.
     """
     impl = String
+    cache_ok = True
 
     def process_bind_param(self, value, dialect):
         # Action AVANT l'insertion dans la base de données : on chiffre !
@@ -56,9 +68,14 @@ class ClientSite(Base):
     # 🔴 MAGIE ICI : On utilise notre nouveau type EncryptedString au lieu de String !
     secret_token = Column(EncryptedString, nullable=False) 
     
-    site_name = Column(String)
+    site_name = Column(String, nullable=False)
 
-    alerts = relationship("SecurityAlert", back_populates="site")
+    alerts = relationship(
+        "SecurityAlert",
+        back_populates="site",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     # NOUVELLE COLONNE : Stocke la date de demande de suppression
     deleted_at = Column(DateTime, nullable=True, default=None)
 
@@ -83,15 +100,23 @@ class ClientSite(Base):
 
 class SecurityAlert(Base):
     __tablename__ = "security_alerts"
+    __table_args__ = (
+        Index("ix_security_alerts_site_status", "site_id", "status"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    site_id = Column(Integer, ForeignKey("client_sites.id", ondelete="CASCADE"), nullable=False) 
+    site_id = Column(
+        Integer,
+        ForeignKey("client_sites.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     
     event_type = Column(String, index=True) 
     severity = Column(String)               
     message = Column(String)
     ip_address = Column(String)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
     site = relationship("ClientSite", back_populates="alerts")
 
@@ -116,12 +141,12 @@ class DashboardAdmin(Base):
     role = Column(String, default="superadmin") 
     
     # Interrupteur d'urgence pour révoquer un accès instantanément
-    is_active = Column(Integer, default=1) 
+    is_active = Column(Boolean, default=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # ✨ NOUVELLES COLONNES POUR LE MFA ✨
-    mfa_secret = Column(String(32), nullable=True) # Clé secrète générée par pyotp
+    mfa_secret = Column(EncryptedString, nullable=True)
     mfa_enabled = Column(Boolean, default=False)   # Indique si le MFA est actif
 
     # ✨ NOUVELLE COLONNE POUR LES CODES DE SECOURS ✨

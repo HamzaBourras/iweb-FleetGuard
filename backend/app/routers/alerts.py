@@ -49,7 +49,7 @@ def receive_agent_alerts(
     
     for site in sites:
         try:
-            decrypted_token = security.decrypt_token(site.secret_token)
+            decrypted_token = site.secret_token
             if hmac.compare_digest(token_recu, decrypted_token): # comparaison à temps constant
                 site_client = site
                 break

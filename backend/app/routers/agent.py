@@ -13,7 +13,7 @@ Description :
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter
 from sqlalchemy.orm import Session
 # ✨ CORRECTION : Utilisation du planificateur asynchrone natif
@@ -53,6 +53,7 @@ async def run_hourly_pings():
 
 # --- TÂCHE 2 : LES SCANS LOURDS AUTOMATIQUES ---
 scheduler = AsyncIOScheduler()
+scheduler_shutdown_requested = False
 
 async def run_automated_scans():
     print("🤖 [Scheduler] Vérification des scans automatiques en attente...")
@@ -91,9 +92,25 @@ async def run_automated_scans():
         db.close()
 
 
+async def purge_trash():
+    db = SessionLocal()
+    try:
+        limit = datetime.utcnow() - timedelta(hours=12)
+        sites = db.query(models.ClientSite).filter(
+            models.ClientSite.deleted_at < limit
+        ).all()
+        for site in sites:
+            db.delete(site)
+        db.commit()
+    finally:
+        db.close()
+
+
 @router.on_event("startup")
 def start_scheduler():
+    global scheduler_shutdown_requested
     if not scheduler.running:
+        scheduler_shutdown_requested = False
         # misfire_grace_time augmenté pour éviter l'annulation si le serveur est en charge
         # max_instances=1 empêche le chevauchement si un scan est plus long que l'intervalle
         
@@ -112,10 +129,19 @@ def start_scheduler():
             misfire_grace_time=300, 
             max_instances=1
         )
+        scheduler.add_job(
+            purge_trash,
+            IntervalTrigger(minutes=30),
+            misfire_grace_time=300,
+            max_instances=1,
+        )
         
         scheduler.start()
         print("⏱️ Planificateur de tâches (AsyncIOScheduler) démarré.")
 
 @router.on_event("shutdown")
 def stop_scheduler():
-    scheduler.shutdown()
+    global scheduler_shutdown_requested
+    if scheduler.running and not scheduler_shutdown_requested:
+        scheduler_shutdown_requested = True
+        scheduler.shutdown()

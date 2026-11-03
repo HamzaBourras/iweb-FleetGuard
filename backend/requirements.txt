@@ -11,6 +11,7 @@
 fastapi
 uvicorn
 sqlalchemy
+alembic
 psycopg2-binary
 pydantic
 cryptography>=42.0.0

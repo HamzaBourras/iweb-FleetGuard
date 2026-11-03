@@ -73,7 +73,7 @@ def login_admin(
         FAILED_LOGIN_ATTEMPTS.setdefault(client_ip, []).append(now)
         raise HTTPException(status_code=401, detail='Email ou mot de passe incorrect')
     
-    if admin.is_active == 0:
+    if not admin.is_active:
         raise HTTPException(status_code=403, detail="Ce compte a été désactivé")
 
     # Réinitialisation des compteurs d'échec

@@ -10,7 +10,8 @@ Description :
 ===============================================================================
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -42,22 +43,20 @@ def get_dashboard_stats(
     
     today = datetime.utcnow()
     jour_noms = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+    start = today.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=6)
+    rows = db.query(
+        func.date(models.SecurityAlert.timestamp),
+        func.count(),
+    ).filter(
+        models.SecurityAlert.timestamp >= start
+    ).group_by(func.date(models.SecurityAlert.timestamp)).all()
+    counts = {day.isoformat(): count for day, count in rows}
     chart_data = []
-    
     for i in range(6, -1, -1):
-        target_date = today - timedelta(days=i)
-        
-        start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-        
-        count = db.query(models.SecurityAlert).filter(
-            models.SecurityAlert.timestamp >= start_of_day,
-            models.SecurityAlert.timestamp <= end_of_day
-        ).count()
-        
+        day = today - timedelta(days=i)
         chart_data.append({
-            "name": jour_noms[target_date.weekday()],
-            "alertes": count
+            "name": jour_noms[day.weekday()],
+            "alertes": counts.get(day.date().isoformat(), 0),
         })
 
     return {
@@ -71,14 +70,18 @@ def get_dashboard_stats(
 
 # ===== === ROUTES POUR LES NOTIFICATIONS DE L'ADMIN (PROTÉGÉES) ===
 # --- ROUTE : Récupérer toutes les notifications de l'admin ---
-@router.get("/notifications")
+@router.get("/notifications", response_model=List[schemas.NotificationResponse])
 def get_admin_notifications(
     admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db),
-    response_model=List[schemas.NotificationResponse]
 ):
     # On récupère les 30 dernières notifications, de la plus récente à la plus ancienne
+    visible = or_(
+        models.Notification.admin_id.is_(None),
+        models.Notification.admin_id == admin.id,
+    )
     notifications = db.query(models.Notification)\
+        .filter(visible)\
         .order_by(models.Notification.created_at.desc())\
         .limit(30)\
         .all()
@@ -91,7 +94,14 @@ def mark_notification_as_read(
     admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    notif = db.query(models.Notification).filter(models.Notification.id == notification_id).first()
+    visible = or_(
+        models.Notification.admin_id.is_(None),
+        models.Notification.admin_id == admin.id,
+    )
+    notif = db.query(models.Notification).filter(
+        models.Notification.id == notification_id,
+        visible,
+    ).first()
     if not notif:
         raise HTTPException(status_code=404, detail="Notification introuvable.")
     
