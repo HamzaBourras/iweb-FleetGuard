@@ -67,11 +67,11 @@ def login_admin(
 
     # 2. On cherche l'administrateur par son email
     admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == credentials.email).first()
+    password_ok = security.verify_password(credentials.password, admin.hashed_password if admin else None)
     
-    # 3. Vérification avec enregistrement de l'échec pour le Rate Limit
-    if not admin or not security.verify_password(credentials.password, admin.hashed_password):
-        FAILED_LOGIN_ATTEMPTS.setdefault(client_ip, []).append(now) # ✨ Enregistre l'échec
-        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+    if not admin or not password_ok:
+        FAILED_LOGIN_ATTEMPTS.setdefault(client_ip, []).append(now)
+        raise HTTPException(status_code=401, detail='Email ou mot de passe incorrect')
     
     if admin.is_active == 0:
         raise HTTPException(status_code=403, detail="Ce compte a été désactivé")

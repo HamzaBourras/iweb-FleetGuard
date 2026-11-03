@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, AlertTriangle, Key } from 'lucide-react';
 import logoImg from '../assets/logo.png';
+import { checkPassword } from '../utils/passwordPolicy';
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -68,24 +69,12 @@ export default function ResetPassword() {
     e.preventDefault();
     setError('');
 
+    // Validation du mot de passe selon les critères définis dans passwordPolicy.js
+    const policyError = checkPassword(newPassword);
+    if (policyError) { setError(policyError); return; }
+
     if (newPassword !== confirmPassword) {
       setError('Les mots de passe ne correspondent pas.');
-      return;
-    }
-
-    // Validation du mot de passe selon les critères définis dans le backend
-    if (newPassword.length < 14 || newPassword.length > 16) {
-      setError('Le mot de passe doit contenir entre 14 et 16 caractères.');
-      return;
-    }
-
-    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
-      setError('Le mot de passe doit contenir majuscule, minuscule et chiffre.');
-      return;
-    }
-
-    if (!/[@#$%^&+=]/.test(newPassword)) {
-      setError('Le mot de passe doit contenir au moins un caractère spécial (@#$%^&+=).');
       return;
     }
 

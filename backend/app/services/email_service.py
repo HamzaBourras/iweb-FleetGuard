@@ -18,6 +18,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formatdate, make_msgid # ✨ NOUVEAU : Import pour les en-têtes standards
 from dotenv import load_dotenv
+from html import escape
 
 # The backend can be started from either the repository root or backend/.
 # Resolve the repository-level .env explicitly so local runs use the same
@@ -37,9 +38,14 @@ def send_soc_email(destinataire: str, sujet: str, type_alerte: str, message_aler
         print("⚠️ [Email] Erreur : Aucun mot de passe SMTP configuré.")
         return
 
+    # Sécurisation des entrées pour éviter l'injection HTML
+    safe_sujet = escape(sujet)
+    safe_type = escape(type_alerte)
+    safe_msg = escape(message_alerte)
+
     # 1. Préparation de l'en-tête de l'email
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"[FleetGuard SOC] {sujet}"
+    msg['Subject'] = '[FleetGuard SOC] ' + ' '.join(safe_sujet.split())
     msg["From"] = f"FleetGuard SecOps <{SENDER_EMAIL}>"
     msg["To"] = destinataire
     
@@ -50,7 +56,7 @@ def send_soc_email(destinataire: str, sujet: str, type_alerte: str, message_aler
     # 2. Logique de couleurs (inchangée...)
     couleur_theme = "#3b82f6" 
     icone = "🛡️"
-    type_min = type_alerte.lower()
+    type_min = safe_type.lower()
     if "sécurité" in type_min or "malvaillant" in type_min:
         couleur_theme = "#ef4444"
         icone = "🚨"
@@ -63,10 +69,10 @@ def send_soc_email(destinataire: str, sujet: str, type_alerte: str, message_aler
 
     # ✨ NOUVEAU : Version Texte Brut (Le fallback exigé par Gmail/Outlook)
     texte_brut = f"""
-    FLEETGUARD SOC - ALERTE : {type_alerte}
+    FLEETGUARD SOC - ALERTE : {safe_type}
     
-    Sujet : {sujet}
-    Message : {message_alerte}
+    Sujet : {safe_sujet}
+    Message : {safe_msg}
     
     Une action de votre part est requise. Connectez-vous à la console d'administration.
     """
@@ -103,10 +109,10 @@ def send_soc_email(destinataire: str, sujet: str, type_alerte: str, message_aler
             <tr>
                 <td style="padding: 40px;">
                     <div style="display: inline-block; padding: 4px 12px; background-color: {couleur_theme}15; color: {couleur_theme}; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 24px; border: 1px solid {couleur_theme}30;">
-                        {type_alerte}
+                        {safe_type.upper()}
                     </div>
                     
-                    <h2 style="color: #0f172a; margin: 0 0 16px 0; font-size: 20px; font-weight: 700; line-height: 1.3;">{sujet}</h2>
+                    <h2 style="color: #0f172a; margin: 0 0 16px 0; font-size: 20px; font-weight: 700; line-height: 1.3;">{safe_sujet}</h2>
                     
                     <!-- Bloc de log technique (Monospace) -->
                     <div style="background-color: #f8fafc; border-left: 4px solid {couleur_theme}; padding: 20px; margin-bottom: 30px; border-radius: 0 6px 6px 0;">

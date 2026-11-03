@@ -11,76 +11,62 @@ Description :
       d'authentification des agents distants en base de données.
 ===============================================================================
 """
-
-import bcrypt
-from jose import jwt, JWTError
-from datetime import datetime, timedelta, timezone
 import os
-from cryptography.fernet import Fernet
+import bcrypt
+from datetime import datetime, timedelta, timezone
+from cryptography.fernet import Fernet, MultiFernet
+from jose import jwt, JWTError
 
-# 1. Configuration des Jetons JWT & Clé Maîtresse
-SECRET_KEY = os.getenv("ENCRYPTION_KEY")
-if not SECRET_KEY:
-    raise ValueError("CRITIQUE : La variable d'environnement ENCRYPTION_KEY est introuvable. Impossible de sécuriser les tokens JWT.")
+# 1. Clé JWT : DISTINCTE de la clé de chiffrement
+JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+if not JWT_SECRET_KEY or len(JWT_SECRET_KEY) < 43:
+    raise ValueError('CRITIQUE : JWT_SECRET_KEY absente ou trop courte (64 octets aléatoires recommandés).')
+if JWT_SECRET_KEY == os.getenv('ENCRYPTION_KEY'):
+    raise ValueError('CRITIQUE : JWT_SECRET_KEY doit être différente de ENCRYPTION_KEY.')
 
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 120 # Déconnexion automatique après 2 heures
+ALGORITHM = 'HS256'
+ACCESS_TOKEN_EXPIRE_MINUTES = 120
 
-# ---------------------------------------------------------
-# 2. Configuration du chiffrement symétrique (Fernet AES-128)
-# ---------------------------------------------------------
-# On utilise ta clé Base64 à haute entropie directement
-try:
-    cipher_suite = Fernet(SECRET_KEY.encode('utf-8'))
-except ValueError:
-    raise ValueError("CRITIQUE : La ENCRYPTION_KEY n'est pas une clé Fernet valide (doit être de 32 octets en Base64 URL-safe).")
+# 2. Chiffrement au repos (Fernet), avec rotation : ENCRYPTION_KEY chiffre, ENCRYPTION_KEY_OLD ne sert qu'à déchiffrer
+def _build_cipher() -> MultiFernet:
+    keys = [k for k in (os.getenv('ENCRYPTION_KEY'), os.getenv('ENCRYPTION_KEY_OLD')) if k]
+    if not keys:
+        raise ValueError('CRITIQUE : ENCRYPTION_KEY introuvable.')
+    try:
+        return MultiFernet([Fernet(k.encode('utf-8')) for k in keys])
+    except ValueError:
+        raise ValueError('CRITIQUE : clé Fernet invalide (32 octets en Base64 URL-safe).')
+
+cipher_suite = _build_cipher()
 
 def encrypt_token(token: str) -> str:
-    """Chiffre le jeton en texte clair en un jeton chiffré (réversible)"""
     return cipher_suite.encrypt(token.encode('utf-8')).decode('utf-8')
 
 def decrypt_token(encrypted_token: str) -> str:
-    """Déchiffre le jeton chiffré pour retrouver le texte clair"""
     return cipher_suite.decrypt(encrypted_token.encode('utf-8')).decode('utf-8')
 
-# ---------------------------------------------------------
-# 3. Fonctions de Hachage avec Bcrypt en direct (Mots de passe Admin)
-# ---------------------------------------------------------
-def verify_password(plain_password, hashed_password):
-    """Compare le mot de passe tapé avec l'empreinte en base de données"""
-    return bcrypt.checkpw(
-        plain_password.encode('utf-8'), 
-        hashed_password.encode('utf-8')
-    )
+# 3. Mots de passe (bcrypt limité à 72 octets)
+def get_password_hash(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8')[:72], bcrypt.gensalt()).decode('utf-8')
 
-def get_password_hash(password):
-    """Transforme un mot de passe en clair en empreinte irréversible"""
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed.decode('utf-8')
+DUMMY_HASH = get_password_hash('dummy-password-for-timing')
 
-# ---------------------------------------------------------
-# 4. Fonction de création du Token JWT
-# ---------------------------------------------------------
+def verify_password(plain_password: str, hashed_password) -> bool:
+    # Si le compte n'existe pas (hashed_password=None), on compare quand même avec un hash factice
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8')[:72], (hashed_password or DUMMY_HASH).encode('utf-8'))
+    except ValueError:
+        return False
+
+# 4. JWT typés
 def create_access_token(data: dict, expires_delta: timedelta = None, token_type: str = 'access'):
     now = datetime.now(timezone.utc)
     expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode = {**data, 'type': token_type, 'iat': now, 'exp': expire}
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)
 
-
-# ---------------------------------------------------------
-# 5. Fonction de vérification et décodage du Token JWT
-# ---------------------------------------------------------
 def decode_access_token(token: str):
-    """
-    Déchiffre le badge JWT et vérifie cryptographiquement sa signature.
-    Rejette automatiquement les jetons expirés ou falsifiés.
-    """
     try:
-        # jwt.decode vérifie automatiquement la signature avec SECRET_KEY et l'expiration (exp)
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
+        return jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
-        # Retourne None si la signature est mauvaise, si le token est expiré, ou s'il est malformé
         return None

@@ -13,9 +13,11 @@ Description :
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+from typing import List, Optional
 
 # Import des modèles
 import app.models.models as models
+import app.schemas.schemas as schemas
 
 # Import des dépendances communes
 from app.dependencies import get_db, get_current_admin
@@ -72,7 +74,8 @@ def get_dashboard_stats(
 @router.get("/notifications")
 def get_admin_notifications(
     admin: models.DashboardAdmin = Depends(get_current_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    response_model=List[schemas.NotificationResponse]
 ):
     # On récupère les 30 dernières notifications, de la plus récente à la plus ancienne
     notifications = db.query(models.Notification)\

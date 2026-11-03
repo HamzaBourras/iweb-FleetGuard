@@ -207,6 +207,7 @@ function iweb_log_security_event( $event_type, $severity, $message ) {
 
     $api_url = 'https://candy-amenity-tricking.ngrok-free.dev/api/alerts'; 
 
+    $message = mb_substr( wp_strip_all_tags( (string) $message ), 0, 900 );
     $payload = wp_json_encode([
         'security_events' => [
             [

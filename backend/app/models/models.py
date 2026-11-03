@@ -22,13 +22,9 @@ from app.database import Base
 
 # 1. Configuration de la clé maîtresse via l'environnement
 # lit la clé qui est sur le fichier .env 
-import os
-raw_key = os.getenv("ENCRYPTION_KEY")
-if not raw_key:
-    raise ValueError("Alerte Sécurité : La clé ENCRYPTION_KEY est introuvable dans l'environnement !")
 
-SECRET_ENCRYPTION_KEY = raw_key.encode('utf-8')
-fernet = Fernet(SECRET_ENCRYPTION_KEY)
+from app.security.security import cipher_suite as fernet
+
 
 # 2. Le Moteur de Chiffrement Automatique (Type personnalisé)
 class EncryptedString(TypeDecorator):
