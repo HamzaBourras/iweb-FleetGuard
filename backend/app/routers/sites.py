@@ -21,7 +21,7 @@ import traceback
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, Response
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 from pydantic import BaseModel
@@ -117,6 +117,7 @@ def get_all_sites(
 @router.post("")
 def create_site(
     site_data: schemas.SiteCreate,
+    response: Response,
     admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
@@ -138,10 +139,8 @@ def create_site(
     db.add(nouveau_site)
     db.commit()
     db.refresh(nouveau_site) 
+    response.headers["Cache-Control"] = "no-store"
 
-    # 4. Ping vers l'agent pour vérifier la connectivité
-    ping_site_agent(nouveau_site.id, db=db, admin=admin)  
-    
     # 5. On renvoie le token en clair pour l'affichage unique
     return {
         "id": nouveau_site.id,
@@ -298,9 +297,14 @@ def restore_site(
 @router.post("/{site_id:int}/regenerate-token")
 def regenerate_site_token(
     site_id: int, 
+    payload: schemas.PasswordConfirmRequest,
+    response: Response,
     admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
+    if not security.verify_password(payload.password, admin.hashed_password):
+        raise HTTPException(status_code=400, detail="Mot de passe incorrect.")
+    response.headers["Cache-Control"] = "no-store"
     site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
     if not site:
         raise HTTPException(status_code=404, detail="Cible introuvable.")
@@ -309,6 +313,14 @@ def regenerate_site_token(
     site.secret_token = raw_token
     db.commit()
     db.refresh(site)
+    db.add(models.Notification(
+        type="rotation de jeton",
+        title=f"Jeton régénéré : {site.site_name}",
+        message="La clé cryptographique du site a été révoquée et régénérée.",
+        site_id=site.id,
+        admin_id=admin.id,
+    ))
+    db.commit()
 
     return {
         "message": "Clé cryptographique révoquée et régénérée avec succès.",
@@ -763,7 +775,7 @@ async def view_malicious_file(
 # =====================================================================
 
 # --- ROUTE : RÉCUPÉRER LES ALERTES D'UN SITE ---
-@router.get("/{site_id:int}/alerts")
+@router.get("/{site_id:int}/alerts", response_model=List[schemas.AlertOut])
 def get_site_alerts(
     site_id: int, 
     limit: int = 10,

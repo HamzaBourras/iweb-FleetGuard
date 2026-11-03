@@ -117,6 +117,13 @@ class SiteSettingsUpdate(BaseModel):
 class RecoveryCodesRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
+class MfaSetupRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+    current_code: Optional[str] = Field(default=None, max_length=32)
+
+class PasswordConfirmRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+
 
 # --- SCHÉMAS D'AUTHENTIFICATION (DASHBOARD) ---
 

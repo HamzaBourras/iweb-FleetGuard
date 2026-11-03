@@ -84,7 +84,7 @@ export default function NotificationDropdown() {
   const getIconForType = (type) => {
     const t = type.toLowerCase();
     if (t.includes('sécurité') || t.includes('malvaillant')) return <ShieldAlert className="w-4 h-4 text-red-500 shrink-0" />;
-    if (t.includes('mfa') || t.includes('secours')) return <Key className="w-4 h-4 text-amber-500 shrink-0" />;
+    if (t.includes('mfa') || t.includes('secours') || t.includes('jeton')) return <Key className="w-4 h-4 text-amber-500 shrink-0" />;
     if (t.includes('mot de passe')) return <Lock className="w-4 h-4 text-emerald-500 shrink-0" />;
     return <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />;
   };

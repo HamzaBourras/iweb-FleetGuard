@@ -93,6 +93,8 @@ export default function SiteInvestigation() {
   const [showTokenModal, setShowTokenModal] = useState(false);
   const [isResettingToken, setIsResettingToken] = useState(false);
   const [newGeneratedToken, setNewGeneratedToken] = useState(null); // Stocke le token en clair
+  const [rotationPassword, setRotationPassword] = useState('');
+  const [rotationError, setRotationError] = useState('');
   const [copied, setCopied] = useState(false); // Gère l'animation du bouton copier
 
   // --- ÉTAT POUR LE SCAN ANTI-MALWARE ---
@@ -434,15 +436,20 @@ export default function SiteInvestigation() {
   // 6. Fonction pour la rotation du token (Key Rotation)
   const handleRegenerateToken = async () => {
     setIsResettingToken(true);
+    setRotationError('');
 
     try {
       const response = await fetch(`http://localhost:8000/api/sites/${id}/regenerate-token`, {
         method: 'POST',
-        credentials: 'include'
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password: rotationPassword })
       });
 
       if (!response.ok) {
-        throw new Error('Échec de la rotation de la clé cryptographique.');
+        const errorData = await response.json().catch(() => null);
+        setRotationError(errorData?.detail || 'Échec de la rotation de la clé cryptographique.');
+        return;
       }
 
       const data = await response.json();
@@ -450,10 +457,10 @@ export default function SiteInvestigation() {
 
       // ✨ Au lieu de fermer la modale, on affiche le composant de succès
       setNewGeneratedToken(data.new_token);
+      setRotationPassword('');
 
     } catch (err) {
       showNotification('error', err.message);
-      setShowTokenModal(false);
     } finally {
       setIsResettingToken(false);
     }
@@ -1381,7 +1388,13 @@ export default function SiteInvestigation() {
           {/* Fond sombre */}
           <div
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity animate-in fade-in duration-300"
-            onClick={() => !isResettingToken && !newGeneratedToken && setShowTokenModal(false)}
+            onClick={() => {
+              if (!isResettingToken && !newGeneratedToken) {
+                setShowTokenModal(false);
+                setRotationPassword('');
+                setRotationError('');
+              }
+            }}
           ></div>
 
           <div className="relative bg-white rounded-2xl md:rounded-3xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.3)] w-full max-w-xl overflow-hidden transform transition-all animate-in zoom-in-[0.97] fade-in duration-300 border border-slate-100 max-h-[90vh] overflow-y-auto z-10">
@@ -1433,6 +1446,8 @@ export default function SiteInvestigation() {
                   onClick={() => {
                     setShowTokenModal(false);
                     setNewGeneratedToken(null); // On purge le token de la mémoire front
+                    setRotationPassword('');
+                    setRotationError('');
                   }}
                   className="w-full px-4 py-3 md:py-3.5 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 font-bold text-sm md:text-base rounded-xl transition-colors ring-1 ring-slate-200/60"
                 >
@@ -1461,11 +1476,26 @@ export default function SiteInvestigation() {
                       Dès que vous confirmerez, l'ancienne clé sera détruite. La sonde télémétrique installée sur le site WordPress ne pourra plus envoyer d'alertes tant que vous n'aurez pas mis à jour sa configuration avec le nouveau token.
                     </p>
                   </div>
+                  {rotationError && <p className="mt-4 text-sm font-bold text-red-600">{rotationError}</p>}
+                  <input
+                    type="password"
+                    value={rotationPassword}
+                    onChange={(e) => {
+                      setRotationPassword(e.target.value);
+                      setRotationError('');
+                    }}
+                    placeholder="Mot de passe actuel"
+                    className="mt-4 w-full px-4 py-3 border border-slate-200 rounded-xl"
+                  />
                 </div>
 
                 <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
                   <button
-                    onClick={() => setShowTokenModal(false)}
+                    onClick={() => {
+                      setShowTokenModal(false);
+                      setRotationPassword('');
+                      setRotationError('');
+                    }}
                     className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg transition-colors"
                     disabled={isResettingToken}
                   >
@@ -1473,7 +1503,7 @@ export default function SiteInvestigation() {
                   </button>
                   <button
                     onClick={handleRegenerateToken}
-                    disabled={isResettingToken}
+                    disabled={isResettingToken || !rotationPassword}
                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
                   >
                     {isResettingToken ? (

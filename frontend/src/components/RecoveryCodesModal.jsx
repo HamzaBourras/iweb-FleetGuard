@@ -65,6 +65,7 @@ export default function RecoveryCodesModal({ onClose, showNotification }) {
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
+    URL.revokeObjectURL(element.href);
   };
 
   return (
@@ -134,9 +135,9 @@ export default function RecoveryCodesModal({ onClose, showNotification }) {
             /* ========================================================= */
             <div className="space-y-6 animate-fade-in">
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <div className="grid grid-cols-2 gap-3 text-center">
+                <div className="grid grid-cols-1 gap-2 text-center">
                   {recoveryCodes.map((code, index) => (
-                    <code key={index} className="block py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono font-bold text-slate-700 shadow-sm select-all">
+                    <code key={index} className="block py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-700 shadow-sm select-all">
                       {code}
                     </code>
                   ))}

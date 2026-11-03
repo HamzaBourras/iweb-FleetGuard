@@ -53,5 +53,7 @@ def get_current_admin(request: Request, db: Session = Depends(get_db)):
     admin = db.query(models.DashboardAdmin).filter(models.DashboardAdmin.email == email).first()
     if admin is None or not admin.is_active:
         raise HTTPException(status_code=401, detail="Administrateur introuvable")
+    if payload.get("tv", 0) != admin.token_version:
+        raise HTTPException(status_code=401, detail="Session révoquée")
         
     return admin

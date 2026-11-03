@@ -11,14 +11,15 @@
  */
 import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { ShieldCheck, X, RefreshCw, AlertTriangle, Smartphone, Download, Copy, Check, Key } from 'lucide-react';
+import { ShieldCheck, X, RefreshCw, AlertTriangle, Smartphone, Download, Copy, Check } from 'lucide-react';
 
-export default function MfaSetupModal({ onClose, showNotification }) {
+export default function MfaSetupModal({ onClose, showNotification, mfaEnabled }) {
   // Gestion des étapes : 0 = Mot de passe, 1 = QR Code, 2 = Codes de secours
   const [step, setStep] = useState(0); 
   
   // États de données
   const [password, setPassword] = useState('');
+  const [currentCode, setCurrentCode] = useState('');
   const [qrUri, setQrUri] = useState('');
   const [secret, setSecret] = useState('');
   const [mfaCode, setMfaCode] = useState('');
@@ -40,7 +41,7 @@ export default function MfaSetupModal({ onClose, showNotification }) {
         method: 'POST', // Modifié en POST
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ password, current_code: mfaEnabled ? currentCode : null })
       });
 
       const data = await response.json();
@@ -152,6 +153,20 @@ export default function MfaSetupModal({ onClose, showNotification }) {
                   autoFocus
                 />
               </div>
+              {mfaEnabled && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Code MFA actuel (6 chiffres ou code de secours)</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={27}
+                    value={currentCode}
+                    onChange={(e) => setCurrentCode(e.target.value.toUpperCase())}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                    autoComplete="off"
+                  />
+                </div>
+              )}
 
               <button
                 type="submit"
@@ -236,9 +251,9 @@ export default function MfaSetupModal({ onClose, showNotification }) {
               </div>
 
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <div className="grid grid-cols-2 gap-3 text-center">
+                <div className="grid grid-cols-1 gap-2 text-center">
                   {recoveryCodes.map((code, index) => (
-                    <code key={index} className="block py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono font-bold text-slate-700 shadow-sm select-all">
+                    <code key={index} className="block py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-700 shadow-sm select-all">
                       {code}
                     </code>
                   ))}

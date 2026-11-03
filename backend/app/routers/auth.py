@@ -13,6 +13,8 @@ Description :
 import os
 import json
 import secrets
+import time
+import hmac
 import pyotp
 from fastapi import APIRouter, Depends, HTTPException, Response, BackgroundTasks, Request
 from sqlalchemy.orm import Session
@@ -39,6 +41,58 @@ router = APIRouter(
 FAILED_LOGIN_ATTEMPTS = {}
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_TIME = timedelta(minutes=15)
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+
+def _set_session_cookie(response: Response, admin) -> None:
+    token = security.create_access_token(
+        data={"sub": admin.email, "role": admin.role, "tv": admin.token_version}
+    )
+    response.set_cookie(
+        key="fleetguard_token",
+        value=token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        max_age=security.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+def _no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
+def _new_recovery_codes():
+    return ["-".join(secrets.token_hex(3) for _ in range(4)).upper() for _ in range(10)]
+
+
+def _verify_mfa(admin, code, db) -> bool:
+    code = (code or "").strip().upper()
+    if not code:
+        return False
+    if admin.mfa_secret:
+        totp = pyotp.TOTP(admin.mfa_secret)
+        current = int(time.time()) // 30
+        for step in (current - 1, current, current + 1):
+            if step <= (admin.last_totp_step or 0):
+                continue
+            if hmac.compare_digest(totp.at(step * 30), code):
+                admin.last_totp_step = step
+                db.commit()
+                return True
+    if admin.mfa_recovery_codes:
+        try:
+            hashed = json.loads(admin.mfa_recovery_codes)
+        except json.JSONDecodeError:
+            hashed = []
+        for idx, hashed_code in enumerate(hashed):
+            if security.verify_password(code, hashed_code):
+                hashed.pop(idx)
+                admin.mfa_recovery_codes = json.dumps(hashed)
+                db.commit()
+                return True
+    return False
 
 
 # --- ROUTE DE CONNEXION ---
@@ -51,13 +105,14 @@ def login_admin(
     db: Session = Depends(get_db)
 ):
     client_ip = request.client.host
+    key = f"{credentials.email.lower()}|{client_ip}"
     now = datetime.utcnow()
 
     # 1. VÉRIFICATION DU RATE LIMITING
-    if client_ip in FAILED_LOGIN_ATTEMPTS:
+    if key in FAILED_LOGIN_ATTEMPTS:
         # Nettoie les anciennes tentatives hors de la fenêtre de temps
-        attempts = [t for t in FAILED_LOGIN_ATTEMPTS[client_ip] if now - t < LOCKOUT_TIME]
-        FAILED_LOGIN_ATTEMPTS[client_ip] = attempts
+        attempts = [t for t in FAILED_LOGIN_ATTEMPTS[key] if now - t < LOCKOUT_TIME]
+        FAILED_LOGIN_ATTEMPTS[key] = attempts
         
         if len(attempts) >= MAX_LOGIN_ATTEMPTS:
             raise HTTPException(
@@ -70,65 +125,22 @@ def login_admin(
     password_ok = security.verify_password(credentials.password, admin.hashed_password if admin else None)
     
     if not admin or not password_ok:
-        FAILED_LOGIN_ATTEMPTS.setdefault(client_ip, []).append(now)
+        FAILED_LOGIN_ATTEMPTS.setdefault(key, []).append(now)
         raise HTTPException(status_code=401, detail='Email ou mot de passe incorrect')
     
     if not admin.is_active:
         raise HTTPException(status_code=403, detail="Ce compte a été désactivé")
 
-    # Réinitialisation des compteurs d'échec
-    if client_ip in FAILED_LOGIN_ATTEMPTS:
-        del FAILED_LOGIN_ATTEMPTS[client_ip]
-    
-    
-
-    # ✨ 3. VERROU MFA (MULTI-FACTOR AUTHENTICATION) ✨
+    # 3. VERROU MFA
     if admin.mfa_enabled:
         if not credentials.mfa_code:
             raise HTTPException(status_code=403, detail="MFA_REQUIRED")
-        
-        mfa_input = credentials.mfa_code.strip().upper() # On nettoie et on met en majuscules
-        
-        # A. On vérifie d'abord si c'est un code TOTP classique (Application)
-        totp = pyotp.TOTP(admin.mfa_secret)
-        is_valid_totp = totp.verify(mfa_input)
-        is_valid_recovery = False
-
-        # B. Si le TOTP échoue, on vérifie si c'est un code de secours
-        if not is_valid_totp and admin.mfa_recovery_codes:
-            try:
-                hashed_codes = json.loads(admin.mfa_recovery_codes)
-            except json.JSONDecodeError:
-                hashed_codes = []
-                
-            for idx, hashed_code in enumerate(hashed_codes):
-                # On compare le code saisi avec le hachage en BDD
-                if security.verify_password(mfa_input, hashed_code):
-                    is_valid_recovery = True
-                    # 🚨 RÈGLE D'OR : On supprime le code de secours utilisé !
-                    hashed_codes.pop(idx)
-                    admin.mfa_recovery_codes = json.dumps(hashed_codes)
-                    db.commit()
-                    break # On sort de la boucle, on a trouvé le bon code
-                    
-        # C. Si ni le TOTP ni le code de secours ne sont bons
-        if not is_valid_totp and not is_valid_recovery:
+        if not _verify_mfa(admin, credentials.mfa_code, db):
+            FAILED_LOGIN_ATTEMPTS.setdefault(key, []).append(now)
             raise HTTPException(status_code=401, detail="Code MFA ou de secours invalide")
 
-    # 4. Si tout est bon (ou si le MFA n'est pas activé), on génère le JWT
-    access_token = security.create_access_token(
-        data={"sub": admin.email, "role": admin.role}
-    )
-
-    # 5. INJECTION SÉCURISÉE DU COOKIE HTTPONLY
-    response.set_cookie(
-        key="fleetguard_token",
-        value=access_token, 
-        httponly=True,  
-        secure=False,   # ⚠️ À passer à True en Production (HTTPS)
-        samesite="lax", 
-        max_age=86400   
-    )
+    FAILED_LOGIN_ATTEMPTS.pop(key, None)
+    _set_session_cookie(response, admin)
     
     return {"message": "Authentification réussie"}
 
@@ -148,7 +160,8 @@ def verify_session(admin: models.DashboardAdmin = Depends(get_current_admin)):
 # --- ROUTE 1 : GÉNÉRATION DU SECRET ET DU QR CODE (SÉCURISÉ PAR MOT DE PASSE) ---
 @router.post("/mfa/setup") 
 def setup_mfa(
-    payload: schemas.RecoveryCodesRequest, # On réutilise ton schéma qui demande un mot de passe
+    payload: schemas.MfaSetupRequest,
+    response: Response,
     admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
@@ -160,15 +173,13 @@ def setup_mfa(
     if not security.verify_password(payload.password, admin.hashed_password):
         raise HTTPException(status_code=400, detail="Mot de passe incorrect.")
 
-    # 2. On génère une clé secrète aléatoire en Base32
+    _no_store(response)
+    if admin.mfa_enabled and not _verify_mfa(admin, payload.current_code, db):
+        raise HTTPException(status_code=400, detail="Code MFA actuel requis pour reconfigurer.")
+
     secret = pyotp.random_base32()
-    
-    # 3. On sauvegarde ce secret dans la base de données
-    admin.mfa_secret = secret
-    admin.mfa_enabled = False
+    admin.mfa_pending_secret = secret
     db.commit()
-    
-    # 4. On crée l'URL compatible avec les applications d'authentification
     totp = pyotp.TOTP(secret)
     provisioning_uri = totp.provisioning_uri(
         name=admin.email, 
@@ -187,6 +198,7 @@ def enable_mfa(
     request: Request,
     payload: schemas.MfaEnableRequest, 
     background_tasks: BackgroundTasks,
+    response: Response,
     admin: models.DashboardAdmin = Depends(get_current_admin), 
     db: Session = Depends(get_db)
 ):
@@ -194,26 +206,27 @@ def enable_mfa(
     Vérifie le premier code à 6 chiffres tapé par l'admin.
     Si le code est bon, on active le MFA et on génère 10 codes de secours à usage unique.
     """
-    if not admin.mfa_secret:
+    _no_store(response)
+    if not admin.mfa_pending_secret:
         raise HTTPException(status_code=400, detail="Veuillez d'abord initialiser la configuration MFA.")
 
     # 1. Vérification du code TOTP
-    totp = pyotp.TOTP(admin.mfa_secret)
-    if not totp.verify(payload.code):
+    totp = pyotp.TOTP(admin.mfa_pending_secret)
+    if not totp.verify(payload.code, valid_window=1):
         raise HTTPException(status_code=400, detail="Code MFA invalide ou expiré.")
 
     # ✨ 2. GÉNÉRATION DES CODES DE SECOURS (Nouveau) ✨
     # On génère 10 codes au format "XXXX-XXXX-XXXX" (ex: "A1B2-C3D4-E5F6")
-    plain_recovery_codes = [
-        f"{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}".upper() 
-        for _ in range(10)
-    ]
+    plain_recovery_codes = _new_recovery_codes()
     
     # 3. On hache ces codes avant de les stocker en BDD (Sécurité maximale)
     hashed_codes = [security.get_password_hash(code) for code in plain_recovery_codes]
     
     # 4. Enregistrement en base de données
-    admin.mfa_enabled = 1
+    admin.mfa_secret = admin.mfa_pending_secret
+    admin.mfa_pending_secret = None
+    admin.mfa_enabled = True
+    admin.last_totp_step = int(time.time()) // 30
     admin.mfa_recovery_codes = json.dumps(hashed_codes) # On stocke la liste sous forme de chaîne JSON
     db.commit()
 
@@ -250,6 +263,7 @@ def regenerate_recovery_codes(
     request: Request,
     payload: schemas.RecoveryCodesRequest,
     background_tasks: BackgroundTasks,
+    response: Response,
     admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
@@ -258,14 +272,12 @@ def regenerate_recovery_codes(
         raise HTTPException(status_code=400, detail="Mot de passe incorrect.")
     
     # 2. Génération de 10 nouveaux codes
-    plain_codes = [
-        f"{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}".upper() 
-        for _ in range(10)
-    ]
+    plain_codes = _new_recovery_codes()
     
     # 3. Hachage et enregistrement (écrase les anciens)
     hashed_codes = [security.get_password_hash(code) for code in plain_codes]
     admin.mfa_recovery_codes = json.dumps(hashed_codes)
+    admin.token_version += 1
 
     # Notification In-App
     notif = models.Notification(
@@ -276,6 +288,8 @@ def regenerate_recovery_codes(
     )
     db.add(notif)
     db.commit()
+    _set_session_cookie(response, admin)
+    _no_store(response)
 
     # Envoi de l'Email
     background_tasks.add_task(
@@ -294,14 +308,20 @@ def regenerate_recovery_codes(
 
 # --- ROUTE DE DÉCONNEXION (SUPPRESSION DU COOKIE) ---
 @router.post("/logout")
-def logout_admin(response: Response, admin: models.DashboardAdmin = Depends(get_current_admin)):
+def logout_admin(
+    response: Response,
+    admin: models.DashboardAdmin = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     """
     Détruit la session en demandant au navigateur de supprimer le cookie.
     """
+    admin.token_version += 1
+    db.commit()
     response.delete_cookie(
         key="fleetguard_token",
         httponly=True,
-        secure=False, # ⚠️ À passer à True en production
+        secure=COOKIE_SECURE,
         samesite="lax"
     )
     return {"message": "Déconnexion réussie et cookie détruit."}
@@ -311,6 +331,7 @@ def logout_admin(response: Response, admin: models.DashboardAdmin = Depends(get_
 def change_password(
     payload: schemas.PasswordChangeRequest,
     background_tasks: BackgroundTasks,
+    response: Response,
     admin: models.DashboardAdmin = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
@@ -324,6 +345,7 @@ def change_password(
 
     # 3. Hacher le nouveau mot de passe et l'enregistrer
     admin.hashed_password = security.get_password_hash(payload.new_password)
+    admin.token_version += 1
 
     # Notification In-App
     notif = models.Notification(
@@ -334,6 +356,8 @@ def change_password(
     )
     db.add(notif)
     db.commit()
+    _set_session_cookie(response, admin)
+    _no_store(response)
 
     # Envoi de l'Email
     background_tasks.add_task(
@@ -421,7 +445,13 @@ def validate_reset_token(
 
 @router.post("/reset-password")
 @limiter.limit("5/minute") # Limitation stricte pour éviter les abus
-def reset_password(request: Request, payload: schemas.ResetPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def reset_password(
+    request: Request,
+    payload: schemas.ResetPasswordRequest,
+    background_tasks: BackgroundTasks,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     now = datetime.now(timezone.utc)
     token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
 
@@ -445,35 +475,14 @@ def reset_password(request: Request, payload: schemas.ResetPasswordRequest, back
 
         mfa_input = payload.mfa_code.strip().upper()
 
-        # A. Vérification TOTP classique
-        totp = pyotp.TOTP(admin.mfa_secret)
-        is_valid_totp = totp.verify(mfa_input)
-        is_valid_recovery = False
-
-        # B. Si le TOTP échoue, on vérifie les codes de secours
-        if not is_valid_totp and admin.mfa_recovery_codes:
-            try:
-                hashed_codes = json.loads(admin.mfa_recovery_codes)
-            except json.JSONDecodeError:
-                hashed_codes = []
-
-            for idx, hashed_code in enumerate(hashed_codes):
-                if security.verify_password(mfa_input, hashed_code):
-                    is_valid_recovery = True
-                    # Le code de secours est à usage unique : on le supprime
-                    hashed_codes.pop(idx)
-                    admin.mfa_recovery_codes = json.dumps(hashed_codes)
-                    db.commit()
-                    break
-
-        # C. Si ni le TOTP ni le code de secours ne sont bons
-        if not is_valid_totp and not is_valid_recovery:
+        if not _verify_mfa(admin, mfa_input, db):
             raise HTTPException(status_code=401, detail="Code MFA ou de secours invalide")
 
     # Le jeton n'est PAS consommé tant que le MFA n'est pas validé : le front rappelle la route avec le code.
 
     # Succès : tout dans la même transaction
     admin.hashed_password = security.get_password_hash(payload.new_password)
+    admin.token_version += 1
     reset.used_at = now
     db.add(models.Notification(
         type='mot de passe modifié',

@@ -398,12 +398,12 @@ export default function Login() {
                       setMfaCode(useRecovery ? val.toUpperCase() : val.replace(/\D/g, ''));
                       clearFieldError('mfa');
                     }}
-                    maxLength={useRecovery ? 14 : 6}
+                    maxLength={useRecovery ? 27 : 6}
                     inputMode={useRecovery ? 'text' : 'numeric'}
                     aria-invalid={!!fieldErrors.mfa}
                     aria-describedby={fieldErrors.mfa ? 'mfa-code-error' : undefined}
                     className={`${baseInput} ${inputBorder(!!fieldErrors.mfa, 'focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200')} text-gray-900 transition-colors text-center text-xl tracking-[0.2em] font-mono shadow-inner uppercase`}
-                    placeholder={useRecovery ? "XXXX-XXXX-XXXX" : "000000"}
+                    placeholder={useRecovery ? "XXXXXX-XXXXXX-XXXXXX-XXXXXX" : "000000"}
                     autoComplete="off"
                     autoFocus
                   />
@@ -474,7 +474,7 @@ export default function Login() {
               isLoading ||
               lockoutTimer > 0 ||
               (requiresMfa && !useRecovery && mfaCode.length !== 6) ||
-              (requiresMfa && useRecovery && mfaCode.length < 10)
+              (requiresMfa && useRecovery && mfaCode.length < 14)
             }
             className={`w-full text-white font-bold py-3 px-4 rounded-lg shadow transition-all duration-200 ${
               lockoutTimer > 0

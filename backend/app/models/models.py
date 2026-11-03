@@ -147,7 +147,10 @@ class DashboardAdmin(Base):
 
     # ✨ NOUVELLES COLONNES POUR LE MFA ✨
     mfa_secret = Column(EncryptedString, nullable=True)
+    mfa_pending_secret = Column(EncryptedString, nullable=True)
     mfa_enabled = Column(Boolean, default=False)   # Indique si le MFA est actif
+    last_totp_step = Column(Integer, nullable=True)
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
 
     # ✨ NOUVELLE COLONNE POUR LES CODES DE SECOURS ✨
     mfa_recovery_codes = Column(Text, nullable=True) # Stockera une liste de codes hachés au format JSON ou texte

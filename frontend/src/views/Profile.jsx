@@ -195,6 +195,7 @@ export default function Profile() {
         <MfaSetupModal 
           onClose={() => setShowMfaModal(false)} 
           showNotification={showNotification}
+          mfaEnabled={mfaEnabled}
         />
       )}
 
