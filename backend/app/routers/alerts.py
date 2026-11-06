@@ -11,19 +11,20 @@ Description :
 ===============================================================================
 """
 
-import hmac
+from datetime import datetime, timedelta
 import os
-from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 
 # Import des modèles, schémas et utilitaires de sécurité
 import app.models.models as models
 import app.schemas.schemas as schemas
-import app.security.security as security
-
 # Import des dépendances communes et services
 from app.dependencies import get_db, get_current_admin
 from app.services.email_service import send_soc_email
+from app.rate_limit import limiter
+from app.security.signing import verify_signature
+from app.services.health import recalculate_health_score
 
 router = APIRouter(
     prefix="/api/alerts",
@@ -32,59 +33,77 @@ router = APIRouter(
 
 # --- ROUTE POUR RECEVOIR LES ALERTES DE L'AGENT PHP ---
 @router.post("")
-def receive_agent_alerts(
-    payload: schemas.AgentPayload,  
-    background_tasks: BackgroundTasks,        
-    authorization: str = Header(None),      
-    db: Session = Depends(get_db)           
+@limiter.limit("120/minute")
+async def receive_agent_alerts(
+    request: Request,
+    payload: schemas.AgentPayload,
+    background_tasks: BackgroundTasks,
+    x_iweb_site: str = Header(None),
+    x_iweb_timestamp: str = Header(None),
+    x_iweb_signature: str = Header(None),
+    db: Session = Depends(get_db),
 ):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Token d'authentification manquant ou mal formaté")
-
-    token_recu = authorization.split(" ")[1]
-
-    # --- LOGIQUE DE SÉCURITÉ (FERNET) ---
-    sites = db.query(models.ClientSite).all()
+    raw = await request.body()
     site_client = None
-    
-    for site in sites:
-        try:
-            decrypted_token = site.secret_token
-            if hmac.compare_digest(token_recu, decrypted_token): # comparaison à temps constant
-                site_client = site
-                break
-        except Exception:
-            continue
+    if x_iweb_site and len(x_iweb_site) <= 36:
+        site_client = db.query(models.ClientSite).filter(
+            models.ClientSite.public_id == x_iweb_site,
+            models.ClientSite.deleted_at.is_(None),
+        ).first()
 
-    if not site_client:
-        raise HTTPException(status_code=403, detail="Token refusé : Site inconnu, token invalide ou accès révoqué")
+    if not site_client or not verify_signature(
+        site_client.secret_token,
+        "POST",
+        "/api/alerts",
+        x_iweb_timestamp,
+        x_iweb_signature,
+        raw,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Signature refusée : site inconnu, jeton invalide ou requête expirée.",
+        )
 
-    # --- ENREGISTREMENT DES ALERTES ET CALCUL DU MALUS ---
-    penalite_score = 0
+    since = datetime.utcnow() - timedelta(seconds=60)
     email_destinataire = os.getenv("SOC_ALERT_EMAIL", "")
+    serious_alert_exists = db.query(models.SecurityAlert.id).filter(
+        models.SecurityAlert.site_id == site_client.id,
+        models.SecurityAlert.severity.in_(["critical", "high"]),
+        models.SecurityAlert.timestamp >= since,
+    ).first() is not None
+    seen = set()
+    email_sent = False
+    stored = 0
 
     for event in payload.security_events:
-        # 1. Enregistrement de l'Alerte dans la BDD
-        nouvelle_alerte = models.SecurityAlert(
+        dedup_key = (event.event_type, event.ip_address)
+        duplicate = dedup_key in seen or db.query(models.SecurityAlert.id).filter(
+            models.SecurityAlert.site_id == site_client.id,
+            models.SecurityAlert.event_type == event.event_type,
+            models.SecurityAlert.ip_address == event.ip_address,
+            models.SecurityAlert.timestamp >= since,
+        ).first()
+        if duplicate:
+            continue
+        seen.add(dedup_key)
+        stored += 1
+
+        db.add(models.SecurityAlert(
             site_id=site_client.id,
             event_type=event.event_type,
             severity=event.severity,
             message=event.message,
-            ip_address=event.ip_address
-        )
-        db.add(nouvelle_alerte)
-
-        # 2. Enregistrement de la Notification In-App (Frontend)
-        nouvelle_notification = models.Notification(
+            ip_address=event.ip_address,
+        ))
+        db.add(models.Notification(
             type="alerte de sécurité",
             title=f"Menace {event.severity.upper()} sur {site_client.site_name}",
             message=f"[{event.event_type}] {event.message} (IP: {event.ip_address})",
-            site_id=site_client.id
-        )
-        db.add(nouvelle_notification)
+            site_id=site_client.id,
+        ))
 
-        # 3. Filtrage et Envoi de l'Email
-        if event.severity in ["critical", "high"]:
+        if event.severity in ("critical", "high") and not serious_alert_exists and not email_sent:
+            email_sent = True
             background_tasks.add_task(
                 send_soc_email,
                 destinataire=email_destinataire,
@@ -93,29 +112,12 @@ def receive_agent_alerts(
                 message_alerte=f"L'agent de sécurité a intercepté une attaque de niveau {event.severity.upper()}.\n\nCible: {site_client.site_name} ({site_client.url})\nMenace: {event.event_type}\nSource: {event.ip_address}\nDétails: {event.message}"
             )
 
-        # 4. Calcul de la pénalité selon la gravité de l'alerte
-        if event.severity == "critical":
-            penalite_score += 15
-        elif event.severity == "high":
-            penalite_score += 10
-        elif event.severity == "medium":
-            penalite_score += 5
-        else:
-            penalite_score += 2
-            
-    # --- MISE À JOUR DU SCORE DE SANTÉ DU SITE ---
-    score_actuel = getattr(site_client, 'health_score', 100)
-    if score_actuel is None:
-        score_actuel = 100
-        
-    nouveau_score = max(0, score_actuel - penalite_score)
-    site_client.health_score = nouveau_score
-
     db.commit()
+    recalculate_health_score(site_client, db)
 
     return {
         "status": "success",
-        "message": f"{len(payload.security_events)} alerte(s) enregistrée(s). Score de santé mis à jour à {nouveau_score}/100."
+        "message": f"{stored} alerte(s) enregistrée(s).",
     }
 # --- ROUTE DE RÉCUPÉRATION DES ALERTES POUR LE DASHBOARD ---
 @router.get("")

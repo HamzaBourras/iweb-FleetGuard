@@ -2,6 +2,10 @@ from pydantic import BaseModel, field_validator, Field, EmailStr, ConfigDict
 from typing import Optional, List, Any, Literal 
 from datetime import datetime
 import re
+import os
+
+
+ALLOW_INSECURE_HTTP = os.getenv("ALLOW_INSECURE_HTTP", "false").lower() == "true"
 
 
 # Fonction pour la validation de la force du mot de passe
@@ -24,8 +28,11 @@ class SiteCreate(BaseModel):
     @classmethod
     def validate_url_format(cls, v):
         v = v.strip()
-        if not (v.startswith("http://") or v.startswith("https://")):
-            raise ValueError("L'URL doit commencer par http:// ou https://")
+        if not (
+            v.startswith("https://")
+            or (ALLOW_INSECURE_HTTP and v.startswith("http://"))
+        ):
+            raise ValueError("L'URL doit commencer par https://")
         if len(v) > 2048:
             raise ValueError("URL trop longue.")
         return v

@@ -12,6 +12,7 @@ Description :
 """
 
 import os
+import uuid
 from sqlalchemy import (
     Boolean,
     Column,
@@ -64,6 +65,10 @@ class ClientSite(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     url = Column(String, unique=True, index=True, nullable=False)
+    public_id = Column(
+        String(36), unique=True, index=True, nullable=False,
+        default=lambda: str(uuid.uuid4()),
+    )
     
     # 🔴 MAGIE ICI : On utilise notre nouveau type EncryptedString au lieu de String !
     secret_token = Column(EncryptedString, nullable=False) 

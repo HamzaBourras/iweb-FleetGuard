@@ -38,21 +38,7 @@ import {
 } from 'lucide-react';
 
 import FileInspectionModal from '../components/FileInspectionModal';
-
-// --- 1) Helper : extrait un message lisible d'une réponse d'erreur FastAPI ---
-// `detail` peut être une chaîne (HTTPException) ou un tableau (422 de validation)
-const extractErrorMessage = (data, fallback) => {
-  const detail = data?.detail;
-  if (typeof detail === 'string' && detail.trim()) return detail;
-  if (Array.isArray(detail)) {
-    const text = detail
-      .map((e) => String(e?.msg || '').replace(/^Value error,\s*/i, ''))
-      .filter(Boolean)
-      .join(' ');
-    if (text) return text;
-  }
-  return fallback;
-};
+import { extractErrorMessage } from '../utils/apiErrors';
 
 export default function SiteInvestigation() {
   // On récupère la fonction envoyée par le Dashboard

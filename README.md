@@ -68,7 +68,7 @@ L'agent remplit deux missions critiques :
 ### 3. Architecture de Sécurité (Zero Trust)
 L'agent est conçu selon le principe du moindre privilège :
 * **Protection des fichiers :** Blocage natif de l'exécution directe du script via l'URL.
-* **Authentification Forte :** L'accès à l'API de l'agent est strictement verrouillé par un jeton de sécurité cryptographique (`Bearer Token`). Seule la Tour de Contrôle possédant ce jeton exact est autorisée à récupérer les données.
+* **Authentification HMAC-SHA256 :** Les routes de l'agent verifient une signature liee a la methode, la route, l'horodatage et le corps JSON. Les requetes expirees ou rejouees sont rejetees.
 
 ### 4. Événements de Sécurité Surveillés (SecOps Logger)
 Le script écoute silencieusement le cœur de WordPress et utilise un système de cache local FIFO (limité aux 50 derniers événements sur 24h) pour repérer les anomalies suivantes :
@@ -91,7 +91,10 @@ Pour garantir l'intégrité de l'infrastructure (Zero-Trust), le jeton d'authent
 
 3. Verrouillage Cryptographique : Ouvrez le fichier wp-config.php situé à la racine du site WordPress.
 
-4. Configuration : Ajoutez la ligne define( 'IWEB_AGENT_SECRET_TOKEN', 'VOTRE_JETON_COPIE_ICI' ); juste avant la ligne "That's all, stop editing!".
+4. Configuration : Ajoutez ces trois lignes juste avant la ligne "That's all, stop editing!" :
+   `define( 'IWEB_AGENT_SECRET_TOKEN', 'VOTRE_JETON_COPIE_ICI' );`
+   `define( 'IWEB_SITE_ID', 'UUID_PUBLIC_DU_SITE' );`
+   `define( 'IWEB_SOC_URL', 'https://soc.exemple.com' );`
 
 
 ## 🏗️ Phase 2 : La Tour de Contrôle Centrale (Backend API)
@@ -112,7 +115,7 @@ La base de données relationnelle s'articule autour de trois modèles définis d
 
 ### 🔒 Sécurité Intégrée (Security by Design)
 L'API a été conçue avec des standards stricts de cybersécurité :
-* **Authentification par Bearer Token :** La route `/api/alerts` rejette toute requête (HTTP 401/403) ne présentant pas un jeton d'agent valide.
+* **Authentification HMAC-SHA256 :** La route `/api/alerts` rejette toute requete dont la signature est absente, invalide, expiree ou rejouee.
 * **Chiffrement au Repos (Encryption at Rest) :** Les jetons de communication ne sont jamais stockés en clair. Ils sont chiffrés dans PostgreSQL à l'aide de l'algorithme **Fernet (AES)** via un `TypeDecorator` personnalisé dans SQLAlchemy. L'API les déchiffre dynamiquement en mémoire uniquement lors de la vérification.
 
 ### 🚀 Déploiement de l'Environnement de Développement
@@ -125,7 +128,7 @@ docker compose up -d
 ### Exemple de requête de test (cURL)
 ```bash
 curl -X GET [https://site-client.com/wp-json/iwebcreative/v1/health](https://site-client.com/wp-json/iwebcreative/v1/health) \
-  -H "Authorization: Bearer VOTRE_TOKEN_SECRET"
+  -H "X-Iweb-Timestamp: TIMESTAMP" -H "X-Iweb-Signature: SIGNATURE"
 ```
 
 ## 🖥️ Phase 3 : Le Centre de Commandes (Dashboard React)
@@ -182,7 +185,7 @@ Le déploiement manuel garantit que l'agent est installé proprement sans passer
 
 ### 3. Établissement du Tunnel Réseau (Phase de Test)
 Afin de permettre au site de production de communiquer avec l'API locale en cours de développement, un tunnel sécurisé est mis en place :
-* Utilisation de **Ngrok** (ou Cloudflare Tunnels) pour exposer le port `8000` du conteneur Docker FastAPI vers une URL HTTPS publique temporaire.
+* Utilisation d?une URL HTTPS publique autoris?e (ou d?un tunnel approuv? par le client) pour exposer le port `8000` du conteneur Docker FastAPI.
 * L'URL générée est injectée dans la configuration de l'agent PHP pour acheminer les payloads JSON.
 
 

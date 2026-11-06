@@ -35,76 +35,76 @@ add_action( 'rest_api_init', function () {
     register_rest_route( 'iwebcreative/v1', '/health', [
         'methods'             => 'GET',
         'callback'            => 'iweb_get_health_data',
-        'permission_callback' => 'iweb_verify_bearer_token',
+        'permission_callback' => 'iweb_verify_signature',
     ] );
 
     // ROUTE 2 : Scan profond anti-malware (indépendante)
     register_rest_route( 'iwebcreative/v1', '/malware-scan', [
         'methods'             => 'GET',
         'callback'            => 'iweb_run_malware_scan',
-        'permission_callback' => 'iweb_verify_bearer_token',
+        'permission_callback' => 'iweb_verify_signature',
     ] );
 
     // ROUTE 3 : Suppression de fichier malveillant
     register_rest_route( 'iwebcreative/v1', '/delete-file', [
         'methods'             => 'POST',
         'callback'            => 'iweb_delete_malicious_file',
-        'permission_callback' => 'iweb_verify_bearer_token',
+        'permission_callback' => 'iweb_verify_signature',
     ] );
 
     // ROUTE 4 : Ping ultra-léger pour le Heartbeat horaire
     register_rest_route( 'iwebcreative/v1', '/status', [
         'methods'             => 'GET',
         'callback'            => 'iweb_get_status',
-        'permission_callback' => 'iweb_verify_bearer_token',
+        'permission_callback' => 'iweb_verify_signature',
     ] );
 
     // ROUTE 5 : Lecture de fichier (Investigation EDR)
     register_rest_route( 'iwebcreative/v1', '/view-file', [
         'methods'             => 'POST',
         'callback'            => 'iweb_view_file_content',
-        'permission_callback' => 'iweb_verify_bearer_token',
+        'permission_callback' => 'iweb_verify_signature',
     ] );
 } );
 
 /**
- * 4. Vérification du jeton de sécurité (Bearer Token)
+ * 4. V?rification de la signature HMAC
  */
-function iweb_verify_bearer_token( WP_REST_Request $request ) {
-    $auth_header = $request->get_header( 'authorization' );
-    
-    // Vérification de la présence du format "Bearer "
-    if ( ! $auth_header || ! preg_match( '/Bearer\s(\S+)/', $auth_header, $matches ) ) {
-        return new WP_Error(
-            'rest_forbidden',
-            'Accès refusé : Jeton manquant ou mal formaté.',
-            [ 'status' => 401 ]
-        );
-    }
-    
-    $token_recu = $matches[1];
+function iweb_verify_signature( WP_REST_Request $request ) {
+    $deny = new WP_Error(
+        'rest_forbidden',
+        'Accès refusé : signature invalide ou requête expirée.',
+        [ 'status' => 401 ]
+    );
 
-    // On vérifie si le jeton a bien été défini dans le wp-config.php par l'administrateur
     if ( ! defined( 'IWEB_AGENT_SECRET_TOKEN' ) || empty( IWEB_AGENT_SECRET_TOKEN ) ) {
         return new WP_Error(
             'rest_forbidden',
-            'Agent non configure : Le jeton de securite IWEB_AGENT_SECRET_TOKEN est manquant dans le fichier wp-config.php.',
+            'Agent non configuré : IWEB_AGENT_SECRET_TOKEN manquant dans wp-config.php.',
             [ 'status' => 401 ]
         );
     }
 
-    $token_local = IWEB_AGENT_SECRET_TOKEN;
-
-    // Comparaison cryptographique sécurisée contre les attaques temporelles
-    if ( hash_equals( $token_local, $token_recu ) ) {
-        return true;
+    $timestamp = $request->get_header( 'x-iweb-timestamp' );
+    $signature = $request->get_header( 'x-iweb-signature' );
+    if ( ! $timestamp || ! ctype_digit( $timestamp ) || ! $signature || abs( time() - (int) $timestamp ) > 300 ) {
+        return $deny;
     }
 
-    return new WP_Error(
-        'rest_forbidden',
-        'Accès refusé : Accès refusé par la cible : Jeton de sécurité invalide ou révoqué.',
-        [ 'status' => 401 ]
-    );
+    $message = strtoupper( $request->get_method() ) . "\n"
+        . $request->get_route() . "\n" . $timestamp . "\n"
+        . hash( 'sha256', $request->get_body() );
+    $calculated = hash_hmac( 'sha256', $message, IWEB_AGENT_SECRET_TOKEN );
+    if ( ! hash_equals( $calculated, $signature ) ) {
+        return $deny;
+    }
+
+    $key = 'iweb_sig_' . hash( 'sha256', $signature );
+    if ( get_transient( $key ) ) {
+        return $deny;
+    }
+    set_transient( $key, 1, 330 );
+    return true;
 }
 
 
@@ -196,16 +196,13 @@ function iweb_log_security_event( $event_type, $severity, $message ) {
     set_transient( 'iweb_security_logs', $logs, DAY_IN_SECONDS );
 
     // --- 2. TRANSMISSION TEMPS RÉEL AU SOC FASTAPI ---
-    
-    //  CORRECTION : On vérifie si la constante existe pour éviter un Crash (Fatal Error)
-    $token = defined( 'IWEB_AGENT_SECRET_TOKEN' ) ? IWEB_AGENT_SECRET_TOKEN : '';
+    $token   = defined( 'IWEB_AGENT_SECRET_TOKEN' ) ? IWEB_AGENT_SECRET_TOKEN : '';
+    $site_id = defined( 'IWEB_SITE_ID' ) ? IWEB_SITE_ID : '';
+    $api_url = defined( 'IWEB_SOC_URL' ) ? rtrim( IWEB_SOC_URL, '/' ) . '/api/alerts' : '';
 
-    // Si le token n'est pas défini dans wp-config, on n'envoie pas la requête externe
-    if ( empty( $token ) ) {
-        return; 
+    if ( empty( $token ) || empty( $site_id ) || stripos( $api_url, 'https://' ) !== 0 ) {
+        return;
     }
-
-    $api_url = 'https://candy-amenity-tricking.ngrok-free.dev/api/alerts'; 
 
     $message = mb_substr( wp_strip_all_tags( (string) $message ), 0, 900 );
     $payload = wp_json_encode([
@@ -219,15 +216,23 @@ function iweb_log_security_event( $event_type, $severity, $message ) {
         ]
     ]);
 
-    // Envoi de la requête HTTP
+    $timestamp = (string) time();
+    $signature = hash_hmac(
+        'sha256',
+        "POST\n/api/alerts\n" . $timestamp . "\n" . hash( 'sha256', $payload ),
+        $token
+    );
+
     wp_remote_post( $api_url, [
-        'method'      => 'POST',
         'timeout'     => 3, 
         'redirection' => 0,
         'blocking'    => false, 
+        'sslverify'   => true,
         'headers'     => [
-            'Content-Type'  => 'application/json',
-            'Authorization' => 'Bearer ' . $token // Utilisation sécurisée de la variable
+            'Content-Type'     => 'application/json',
+            'X-Iweb-Site'      => $site_id,
+            'X-Iweb-Timestamp' => $timestamp,
+            'X-Iweb-Signature' => $signature,
         ],
         'body'        => $payload,
     ]);
@@ -532,7 +537,7 @@ function iweb_resolve_in_uploads( $file_path ) {
  * Codes de retour (consommés par sites.py) :
  *   200 : fichier déplacé en quarantaine
  *   400 : paramètre manquant ou cible invalide (ce n'est pas un fichier)
- *   401 : jeton refusé (géré par iweb_verify_bearer_token)
+ *   401 : jeton refusé (géré par iweb_verify_signature)
  *   403 : chemin hors du dossier uploads
  *   404 : fichier introuvable (déjà supprimé ou déplacé)
  *   500 : échec technique (permissions, dossier de quarantaine)

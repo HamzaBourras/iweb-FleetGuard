@@ -34,6 +34,8 @@ import app.security.security as security
 # Import des dépendances communes et services
 from app.dependencies import get_db, get_current_admin
 from app.services.email_service import send_soc_email
+from app.services.agent_client import call_agent
+from app.services.health import recalculate_health_score
 from app.security.url_validator import validate_public_url, UnsafeUrlError
 
 # Configuration du logger pour le module 
@@ -44,42 +46,6 @@ router = APIRouter(
     prefix="/api/sites",
     tags=["Gestion des Sites"]
 )
-
-
-# --- FONCTION UTILITAIRE : RECALCUL DU SCORE DE SANTÉ ---
-def recalculate_health_score(site, db: Session):
-    """
-    Recalcule le score de santé du site basé sur les menaces actives.
-    """
-    has_malware = len(site.malware_report) > 0 if site.malware_report else False
-    
-    if has_malware:
-        site.health_score = 0
-    else:
-        active_alerts = db.query(models.SecurityAlert).filter(
-            models.SecurityAlert.site_id == site.id,
-            models.SecurityAlert.status != "resolved"
-        ).all()
-        
-        if not active_alerts:
-            site.health_score = 100
-        else:
-            penalite_score = 0
-            for event in active_alerts:
-                if event.severity == "critical":
-                    penalite_score += 15
-                elif event.severity == "high":
-                    penalite_score += 10
-                elif event.severity == "medium":
-                    penalite_score += 5
-                else:
-                    penalite_score += 2
-            
-            new_score = 100 - penalite_score
-            site.health_score = max(20, new_score)
-
-    db.commit()
-    db.refresh(site)
 
 
 # --- ROUTE : RÉCUPÉRATION DE TOUS LES SITES ---
@@ -146,7 +112,9 @@ def create_site(
         "id": nouveau_site.id,
         "site_name": nouveau_site.site_name,
         "url": nouveau_site.url,
-        "secret_token": raw_token
+        "secret_token": raw_token,
+        "public_id": nouveau_site.public_id,
+        "soc_url": os.getenv("SOC_PUBLIC_URL", ""),
     }
 
 # --- ROUTE : VUE DÉTAILLÉE D'UN SEUL SITE ---
@@ -196,32 +164,14 @@ async def ping_site_agent(
     if not site:
         raise HTTPException(status_code=404, detail="Cible introuvable.")
 
-    base_url = site.url.rstrip('/')
-    timestamp_actuel = int(time.time())
-    
-    # ✨ LA CORRECTION EST ICI : On cible la nouvelle API /status
-    status_endpoint = f"{base_url}/wp-json/iwebcreative/v1/status?nocache={timestamp_actuel}"
-
     try:
-        decrypted_token = site.secret_token
-    except Exception:
-        raise HTTPException(status_code=500, detail="Jeton illisible.")
-
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(
-                status_endpoint, # <-- On utilise la nouvelle variable ici
-                headers={"Authorization": f"Bearer {decrypted_token}"}
-            )
-            
-            if response.status_code == 200:
-                site.last_seen = datetime.utcnow()
-                db.commit()
-                return {"status": "success", "message": "Site en ligne."}
-            else:
-                raise HTTPException(status_code=response.status_code, detail="Le site a refusé la connexion.")
-                
-    except Exception as e:
+        response = await call_agent(site, "GET", "status", timeout=5.0)
+        if response.status_code == 200:
+            site.last_seen = datetime.utcnow()
+            db.commit()
+            return {"status": "success", "message": "Site en ligne."}
+        raise HTTPException(status_code=response.status_code, detail="Le site a refuse la connexion.")
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Site injoignable.")
     
 
@@ -325,7 +275,8 @@ def regenerate_site_token(
     return {
         "message": "Clé cryptographique révoquée et régénérée avec succès.",
         "site_id": site.id,
-        "new_token": raw_token
+        "new_token": raw_token,
+        "public_id": site.public_id,
     }
 
 # --- ROUTE : MISE À JOUR DES PARAMÈTRES (Auto-scan) ---
@@ -369,25 +320,12 @@ async def scan_site(
     if not site:
         raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
 
-    base_url = site.url.rstrip('/')
-    timestamp_actuel = int(time.time())
-    health_endpoint = f"{base_url}/wp-json/iwebcreative/v1/health?nocache={timestamp_actuel}"
-
     try:
-        decrypted_token = site.secret_token
-    except Exception:
-        raise HTTPException(status_code=500, detail="Erreur interne : Impossible de déchiffrer le jeton de l'actif.")
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                health_endpoint,
-                headers={"Authorization": f"Bearer {decrypted_token}"}
-            )
-            if response.status_code == 401:
-                raise HTTPException(status_code=401, detail="Accès refusé par la cible : Jeton de sécurité invalide ou révoqué.")
-            response.raise_for_status()
-            scan_data = response.json()
+        response = await call_agent(site, "GET", "health", timeout=10.0)
+        if response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Acces refuse par la cible : signature invalide ou revoquee.")
+        response.raise_for_status()
+        scan_data = response.json()
     except httpx.ConnectTimeout:
         raise HTTPException(status_code=504, detail="Délai d'attente dépassé : Le site cible ne répond pas.")
     except httpx.RequestError:
@@ -430,24 +368,11 @@ async def run_malware_scan(
         if not site:
             raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
 
-        base_url = site.url.rstrip('/')
-        timestamp_actuel = int(time.time())
-        scan_endpoint = f"{base_url}/wp-json/iwebcreative/v1/malware-scan?nocache={timestamp_actuel}"
-
-        try:
-            decrypted_token = site.secret_token
-        except Exception:
-            raise HTTPException(status_code=500, detail="Impossible de déchiffrer le jeton de l'actif.")
-
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(
-                scan_endpoint,
-                headers={"Authorization": f"Bearer {decrypted_token}"} 
-            )
-            if response.status_code == 401:
-                raise HTTPException(status_code=401, detail="Accès refusé par la cible : Jeton de sécurité invalide ou révoqué.")
-            response.raise_for_status()
-            scan_data = response.json()
+        response = await call_agent(site, "GET", "malware-scan", timeout=60.0)
+        if response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Acces refuse par la cible : signature invalide ou revoquee.")
+        response.raise_for_status()
+        scan_data = response.json()
 
         site.last_scan_at = datetime.utcnow()
 
@@ -481,6 +406,7 @@ async def run_malware_scan(
         
         db.commit()
         db.refresh(site)
+        recalculate_health_score(site, db)
         
         return {
             "message": "Analyse anti-malware terminée avec succès",
@@ -538,22 +464,12 @@ async def delete_malicious_file(
     if entry.get("manual_only"):
         raise HTTPException(status_code=400, detail="Ce fichier doit être nettoyé manuellement via SFTP.")
 
-    try:
-        decrypted_token = site.secret_token
-    except Exception:
-        logger.exception("Déchiffrement du jeton impossible pour le site %s", site_id)
-        raise HTTPException(status_code=500, detail="Erreur interne : jeton de l'actif illisible.")
-
-    delete_endpoint = f"{site.url.rstrip('/')}/wp-json/iwebcreative/v1/delete-file"
-
     # ---------- 2. Appel de l'agent ----------
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(
-                delete_endpoint,
-                headers={"Authorization": f"Bearer {decrypted_token}"},
-                json={"file_path": payload.file_path}
-            )
+        response = await call_agent(
+            site, "POST", "delete-file",
+            {"file_path": payload.file_path}, timeout=15.0
+        )
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=504,
@@ -718,21 +634,11 @@ async def view_malicious_file(
         if entry.get("manual_only"):
             raise HTTPException(status_code=400, detail="Ce fichier doit être nettoyé manuellement via SFTP.")
 
-        base_url = site.url.rstrip('/')
-        view_endpoint = f"{base_url}/wp-json/iwebcreative/v1/view-file"
-        
         try:
-            decrypted_token = site.secret_token
-        except Exception:
-            raise HTTPException(status_code=500, detail="Erreur de déchiffrement du jeton.")
-
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.post(
-                        view_endpoint,
-                        headers={"Authorization": f"Bearer {decrypted_token}"},
-                        json={"file_path": payload.file_path}
-                    )
+            response = await call_agent(
+                site, "POST", "view-file",
+                {"file_path": payload.file_path}, timeout=10.0
+            )
         except httpx.TimeoutException:
             raise HTTPException(status_code=504, detail="Délai dépassé : le site distant n'a pas répondu.")
         except httpx.RequestError:

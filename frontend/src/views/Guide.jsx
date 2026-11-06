@@ -69,7 +69,7 @@ export default function Guide() {
           Architecture Hybride (Push & Pull)
         </h3>
         <p className="text-slate-300 leading-relaxed text-sm md:text-base mb-6 relative z-10">
-          La plateforme repose sur une communication bidirectionnelle sécurisée par des jetons chiffrés symétriquement (Fernet), garantissant l'intégrité des échanges entre le backend Python et les sondes PHP distantes.
+          Chaque requête est signée en HMAC-SHA256 avec horodatage (fenêtre de 5 minutes, anti-rejeu) et transite en HTTPS ; les jetons sont chiffrés au repos en base (Fernet).
         </p>
 
         <div className="space-y-6 relative z-10">
@@ -178,7 +178,7 @@ export default function Guide() {
           <div className="w-full md:w-1/3 bg-slate-50 border border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-center">
             <Key className="w-12 h-12 text-slate-400 mb-4" />
             <p className="text-sm font-bold text-slate-700 mb-2">Chiffrement Symétrique</p>
-            <p className="text-xs text-slate-500">Les jetons sont chiffrés dans la base de données PostgreSQL via l'algorithme Fernet. Le backend Python les déchiffre à la volée uniquement lors de l'exécution d'un scan distant.</p>
+            <p className="text-xs text-slate-500">Les jetons sont chiffrés au repos dans PostgreSQL ; le secret n'est jamais envoyé sur le réseau.</p>
           </div>
         </div>
       </section>

@@ -13,6 +13,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, Copy, Check, Server, ShieldAlert, Eye, ChevronLeft, ChevronRight, Radar, X, WifiOff, AlertTriangle, Search, Filter, ChevronDown } from 'lucide-react';
+import { extractErrorMessage } from '../utils/apiErrors';
 
 
 // NOUVEAU COMPOSANT : Il gère sa propre requête API et affiche la date
@@ -147,6 +148,7 @@ export default function SitesList() {
   const [copied, setCopied] = useState(false);
 
   const [newGeneratedToken, setNewGeneratedToken] = useState(null);
+  const [newSiteMeta, setNewSiteMeta] = useState(null);
 
   // --- États pour la modale de suppression ---
   const [siteToDelete, setSiteToDelete] = useState(null); // Stocke l'ID du site à supprimer
@@ -307,11 +309,15 @@ export default function SitesList() {
         body: JSON.stringify({ site_name: newSiteName, url: newSiteUrl }),
       });
 
-      if (!response.ok) showNotification('error', 'Erreur lors de l\'ajout du site. Veuillez vérifier les informations et réessayer.');
-      const addedSite = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showNotification('error', extractErrorMessage(data, "Erreur lors de l'ajout du site."));
+        return;
+      }
 
       fetchSites();
-      setNewGeneratedToken(addedSite.secret_token);
+      setNewGeneratedToken(data.secret_token);
+      setNewSiteMeta({ public_id: data.public_id, soc_url: data.soc_url });
       setNewSiteName('');
       setNewSiteUrl('');
       // ✨ NOUVEAU : Notification de succès
@@ -325,15 +331,22 @@ export default function SitesList() {
   };
 
   const handleCopyToken = () => {
-    navigator.clipboard.writeText(newGeneratedToken);
+    navigator.clipboard.writeText(configSnippet);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
-    setTimeout(() => setNewGeneratedToken(null), 300);
+    setTimeout(() => {
+      setNewGeneratedToken(null);
+      setNewSiteMeta(null);
+    }, 300);
   };
+
+  const configSnippet = newGeneratedToken && newSiteMeta
+    ? `define( 'IWEB_AGENT_SECRET_TOKEN', '${newGeneratedToken}' );\ndefine( 'IWEB_SITE_ID', '${newSiteMeta.public_id}' );\ndefine( 'IWEB_SOC_URL', '${newSiteMeta.soc_url}' );`
+    : '';
 
   if (isLoading) return (
     <div className="flex flex-col items-center justify-center h-64 space-y-4 animate-pulse text-slate-500">
@@ -547,16 +560,14 @@ export default function SitesList() {
                     Sauvegarde Cryptographique Requise
                   </h4>
                   <p className="text-[10px] md:text-xs text-amber-800/80 leading-relaxed ml-5 md:ml-6">
-                    Copiez ce jeton pour configurer l'agent distant.
+                    Copiez ces trois lignes dans wp-config.php pour configurer l'agent distant.
                     <span className="block mt-1 font-bold text-amber-900">Il ne sera affiché qu'une seule fois.</span>
                   </p>
                 </div>
 
                 <div className="bg-[#0B1120] p-1 md:p-1.5 rounded-xl md:rounded-2xl flex items-center justify-between gap-2 md:gap-3 mb-6 md:mb-8 shadow-inner ring-1 ring-slate-800/50">
                   {/* Correction apportée au code copié pour permettre un défilement propre sur mobile */}
-                  <code className="text-emerald-400 font-mono text-xs md:text-sm pl-3 md:pl-4 overflow-x-auto whitespace-nowrap scrollbar-hide select-all py-2 md:py-0">
-                    {newGeneratedToken}
-                  </code>
+                  <pre className="text-emerald-400 font-mono text-xs p-3 overflow-x-auto select-all">{configSnippet}</pre>
                   <button
                     onClick={handleCopyToken}
                     className={`p-2 md:p-2.5 rounded-lg md:rounded-xl transition-all duration-300 shrink-0 flex items-center gap-1.5 md:gap-2 font-bold text-xs md:text-sm ${copied
