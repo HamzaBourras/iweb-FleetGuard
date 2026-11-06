@@ -296,7 +296,7 @@ export default function SecurityAlerts() {
                     {/* Site Cible */}
                     <td className="px-4 md:px-6 py-3 md:py-4">
                       <button
-                        onClick={() => navigate(`/dashboard/sites/${alert.site_id}`)}
+                        onClick={() => navigate(`/dashboard/sites/${alert.site_public_id}`)}
                         className="font-semibold text-blue-700 bg-blue-50 px-2 md:px-2.5 py-1 rounded-md text-[10px] md:text-xs border border-blue-100 hover:bg-blue-600 hover:text-white transition-all flex items-center gap-1.5 group/btn cursor-pointer"
                         title="Pivoter vers la vue détaillée de l'actif"
                       >

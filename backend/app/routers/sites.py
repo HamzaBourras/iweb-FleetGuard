@@ -18,6 +18,7 @@ import secrets
 import time
 import httpx
 import traceback
+import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -32,7 +33,13 @@ import app.schemas.schemas as schemas
 import app.security.security as security
 
 # Import des dépendances communes et services
-from app.dependencies import get_db, get_current_admin
+from app.dependencies import (
+    get_active_site,
+    get_any_site,
+    get_current_admin,
+    get_db,
+    require_role,
+)
 from app.services.email_service import send_soc_email
 from app.services.agent_client import call_agent
 from app.services.health import recalculate_health_score
@@ -118,24 +125,18 @@ def create_site(
     }
 
 # --- ROUTE : VUE DÉTAILLÉE D'UN SEUL SITE ---
-@router.get("/{site_id:int}")
+@router.get("/{public_id:uuid}")
 def get_single_site(
-    site_id: int, 
-    admin: models.DashboardAdmin = Depends(get_current_admin), 
+    site: models.ClientSite = Depends(get_any_site),
     db: Session = Depends(get_db)
 ):
-    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-    
-    if not site:
-        raise HTTPException(status_code=404, detail="Actif introuvable dans la flotte.")
-        
-    alerts_count = db.query(models.SecurityAlert).filter(models.SecurityAlert.site_id == site_id).count()
-
-    # Recalculer le score avant de renvoyer
-    recalculate_health_score(site, db)
+    alerts_count = db.query(models.SecurityAlert).filter(
+        models.SecurityAlert.site_id == site.id
+    ).count()
     
     return {
         "id": site.id,
+        "public_id": site.public_id,
         "site_name": site.site_name,
         "url": site.url,
         "status": "actif" if not site.deleted_at else "corbeille",
@@ -154,16 +155,12 @@ def get_single_site(
 
 
 # --- ROUTE : PING VERS L'AGENT (VÉRIFICATION DE CONNEXION LÉGÈRE) ---
-@router.post("/{site_id:int}/ping")
+@router.post("/{public_id:uuid}/ping")
 async def ping_site_agent(
-    site_id: int, 
-    db: Session = Depends(get_db), 
+    site: models.ClientSite = Depends(get_active_site),
+    db: Session = Depends(get_db),
     admin: Optional[models.DashboardAdmin] = Depends(get_current_admin), 
 ):
-    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-    if not site:
-        raise HTTPException(status_code=404, detail="Cible introuvable.")
-
     try:
         response = await call_agent(site, "GET", "status", timeout=5.0)
         if response.status_code == 200:
@@ -176,17 +173,11 @@ async def ping_site_agent(
     
 
 # --- ROUTE : OBTENIR LE STATUT (LIVESTATUS) ---
-@router.get("/{site_id:int}/status")
+@router.get("/{public_id:uuid}/status")
 def get_site_status(
-    site_id: int, 
-    admin: models.DashboardAdmin = Depends(get_current_admin),
+    site: models.ClientSite = Depends(get_any_site),
     db: Session = Depends(get_db)
 ):
-    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-    
-    if not site:
-        raise HTTPException(status_code=404, detail="Site introuvable")
-
     if site.deleted_at:
         return {"status": "en_corbeille"}
 
@@ -214,51 +205,39 @@ def get_site_status(
     }
 
 # --- ROUTE : MISE EN CORBEILLE ---
-@router.delete("/{site_id:int}")
+@router.delete("/{public_id:uuid}")
 def soft_delete_site(
-    site_id: int, 
-    admin: models.DashboardAdmin = Depends(get_current_admin), 
-    db: Session = Depends(get_db)
+    site: models.ClientSite = Depends(get_active_site),
+    admin: models.DashboardAdmin = Depends(require_role("superadmin")),
+    db: Session = Depends(get_db),
 ):
-    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-    if not site:
-        raise HTTPException(status_code=404, detail="Site introuvable")
-    
     site.deleted_at = datetime.utcnow()
     db.commit()
     return {"message": "Le site a été placé en corbeille pour 12 heures."}
 
 # --- ROUTE : RESTAURATION ---
-@router.put("/{site_id:int}/restore")
+@router.put("/{public_id:uuid}/restore")
 def restore_site(
-    site_id: int, 
-    admin: models.DashboardAdmin = Depends(get_current_admin), 
-    db: Session = Depends(get_db)
+    site: models.ClientSite = Depends(get_any_site),
+    admin: models.DashboardAdmin = Depends(require_role("superadmin")),
+    db: Session = Depends(get_db),
 ):
-    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-    if not site:
-        raise HTTPException(status_code=404, detail="Site introuvable")
-    
     site.deleted_at = None
     db.commit()
     return {"message": "Le site a été restauré avec succès."}
 
 # --- ROUTE : RÉGÉNÉRATION DU TOKEN ---
-@router.post("/{site_id:int}/regenerate-token")
+@router.post("/{public_id:uuid}/regenerate-token")
 def regenerate_site_token(
-    site_id: int, 
     payload: schemas.PasswordConfirmRequest,
     response: Response,
-    admin: models.DashboardAdmin = Depends(get_current_admin), 
-    db: Session = Depends(get_db)
+    site: models.ClientSite = Depends(get_active_site),
+    admin: models.DashboardAdmin = Depends(require_role("superadmin")),
+    db: Session = Depends(get_db),
 ):
     if not security.verify_password(payload.password, admin.hashed_password):
         raise HTTPException(status_code=400, detail="Mot de passe incorrect.")
     response.headers["Cache-Control"] = "no-store"
-    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-    if not site:
-        raise HTTPException(status_code=404, detail="Cible introuvable.")
-
     raw_token = f"IWEB_{secrets.token_urlsafe(32)}"
     site.secret_token = raw_token
     db.commit()
@@ -280,17 +259,13 @@ def regenerate_site_token(
     }
 
 # --- ROUTE : MISE À JOUR DES PARAMÈTRES (Auto-scan) ---
-@router.patch("/{site_id:int}/settings")
+@router.patch("/{public_id:uuid}/settings")
 def update_site_settings(
-    site_id: int,
     settings: schemas.SiteSettingsUpdate,
+    site: models.ClientSite = Depends(get_active_site),
     admin: models.DashboardAdmin = Depends(get_current_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-    if not site:
-        raise HTTPException(status_code=404, detail="Cible introuvable.")
-    
     if settings.auto_scan_enabled is not None:
         site.auto_scan_enabled = settings.auto_scan_enabled
     if settings.scan_frequency is not None:
@@ -309,17 +284,12 @@ def update_site_settings(
 # =====================================================================
 
 # --- ROUTE : SCAN FORÉNSIQUE D'UN SITE ---
-@router.post("/{site_id:int}/scan")
+@router.post("/{public_id:uuid}/scan")
 async def scan_site(
-    site_id: int, 
-    db: Session = Depends(get_db), 
+    site: models.ClientSite = Depends(get_active_site),
+    db: Session = Depends(get_db),
     admin: models.DashboardAdmin = Depends(get_current_admin),
 ):
-    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-    
-    if not site:
-        raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
-
     try:
         response = await call_agent(site, "GET", "health", timeout=10.0)
         if response.status_code == 401:
@@ -356,18 +326,14 @@ async def scan_site(
     }
 
 # --- ROUTE : SCAN ANTI-MALWARE ---
-@router.post("/{site_id:int}/malware-scan")
+@router.post("/{public_id:uuid}/malware-scan")
 async def run_malware_scan(
-    site_id: int, 
     background_tasks: BackgroundTasks,
+    site: models.ClientSite = Depends(get_active_site),
     db: Session = Depends(get_db),
     admin: models.DashboardAdmin = Depends(get_current_admin),
 ):
     try:
-        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-        if not site:
-            raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
-
         response = await call_agent(site, "GET", "malware-scan", timeout=60.0)
         if response.status_code == 401:
             raise HTTPException(status_code=401, detail="Acces refuse par la cible : signature invalide ou revoquee.")
@@ -445,18 +411,14 @@ def _agent_message(response: httpx.Response) -> Optional[str]:
 
 
 # --- ROUTE : MISE EN QUARANTAINE D'UN FICHIER MALVEILLANT SUR LE SITE ---
-@router.post("/{site_id:int}/delete-file")
+@router.post("/{public_id:uuid}/delete-file")
 async def delete_malicious_file(
-    site_id: int,
     payload: schemas.DeleteFileRequest,
+    site: models.ClientSite = Depends(get_active_site),
     db: Session = Depends(get_db),
-    admin: models.DashboardAdmin = Depends(get_current_admin)
+    admin: models.DashboardAdmin = Depends(require_role("superadmin")),
 ):
     # ---------- 1. Contrôles locaux ----------
-    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-    if not site:
-        raise HTTPException(status_code=404, detail="Cible introuvable dans la flotte.")
-
     # Seuls les fichiers du dernier rapport de scan peuvent être traités
     entry = next((f for f in (site.malware_report or []) if f.get("file") == payload.file_path), None)
     if not entry:
@@ -547,7 +509,7 @@ async def delete_malicious_file(
 
     except Exception:
         db.rollback()
-        logger.exception("Mise à jour du rapport impossible (site %s)", site_id)
+        logger.exception("Mise à jour du rapport impossible (site %s)", site.id)
         raise HTTPException(
             status_code=500,
             detail="Le fichier a bien été traité sur le site distant, mais la mise à jour du rapport "
@@ -566,18 +528,13 @@ async def delete_malicious_file(
     }
 
 # --- ROUTE : MARQUER UN FICHIER COMME SAIN (WHITELIST) ---
-@router.post("/{site_id:int}/whitelist-file")
+@router.post("/{public_id:uuid}/whitelist-file")
 def whitelist_site_file(
-    site_id: int,
     payload: schemas.FileActionRequest,
-    admin: models.DashboardAdmin = Depends(get_current_admin),
-    db: Session = Depends(get_db)
+    site: models.ClientSite = Depends(get_active_site),
+    admin: models.DashboardAdmin = Depends(require_role("superadmin")),
+    db: Session = Depends(get_db),
 ):
-    site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-    
-    if not site:
-        raise HTTPException(status_code=404, detail="Cible introuvable.")
-
     if site.whitelisted_files is None:
         site.whitelisted_files = []
 
@@ -615,18 +572,14 @@ def whitelist_site_file(
     }
 
 # --- ROUTE : VISUALISER LE CONTENU D'UN FICHIER (INVESTIGATION EDR) ---
-@router.post("/{site_id:int}/view-file")
+@router.post("/{public_id:uuid}/view-file")
 async def view_malicious_file(
-    site_id: int, 
     payload: schemas.DeleteFileRequest, # On réutilise ce schéma car il contient juste "file_path"
+    site: models.ClientSite = Depends(get_active_site),
     db: Session = Depends(get_db),
-    admin: models.DashboardAdmin = Depends(get_current_admin)
+    admin: models.DashboardAdmin = Depends(require_role("superadmin")),
 ):
     try:
-        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-        if not site:
-            raise HTTPException(status_code=404, detail="Cible introuvable.")
-
         # Vérification que le fichier est bien dans le dernier rapport de scan
         entry = next((f for f in (site.malware_report or []) if f.get("file") == payload.file_path), None)
         if not entry:
@@ -673,7 +626,7 @@ async def view_malicious_file(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Erreur lors de la lecture du fichier (site %s)", site_id)
+        logger.exception("Erreur lors de la lecture du fichier (site %s)", site.id)
         raise HTTPException(status_code=500, detail="Erreur interne lors de la lecture du fichier.")
 
 # =====================================================================
@@ -681,15 +634,14 @@ async def view_malicious_file(
 # =====================================================================
 
 # --- ROUTE : RÉCUPÉRER LES ALERTES D'UN SITE ---
-@router.get("/{site_id:int}/alerts", response_model=List[schemas.AlertOut])
+@router.get("/{public_id:uuid}/alerts", response_model=List[schemas.AlertOut])
 def get_site_alerts(
-    site_id: int, 
+    site: models.ClientSite = Depends(get_any_site),
     limit: int = 10,
-    admin: models.DashboardAdmin = Depends(get_current_admin), 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     alerts = db.query(models.SecurityAlert)\
-        .filter(models.SecurityAlert.site_id == site_id)\
+        .filter(models.SecurityAlert.site_id == site.id)\
         .order_by(models.SecurityAlert.timestamp.desc())\
         .limit(limit)\
         .all()
@@ -697,17 +649,17 @@ def get_site_alerts(
     return alerts
 
 # --- ROUTE : RÉSOUDRE UNE ALERTE SPÉCIFIQUE ---
-@router.patch("/{site_id:int}/alerts/{alert_id}/resolve")
+@router.patch("/{public_id:uuid}/alerts/{alert_id}/resolve")
 async def resolve_security_alert(
-    site_id: int, 
     alert_id: int, 
+    site: models.ClientSite = Depends(get_active_site),
     db: Session = Depends(get_db),
-    admin: models.DashboardAdmin = Depends(get_current_admin)
+    admin: models.DashboardAdmin = Depends(get_current_admin),
 ):
     try:
         alert = db.query(models.SecurityAlert).filter(
             models.SecurityAlert.id == alert_id,
-            models.SecurityAlert.site_id == site_id
+            models.SecurityAlert.site_id == site.id
         ).first()
 
         if not alert:
@@ -716,9 +668,7 @@ async def resolve_security_alert(
         alert.status = "resolved"
         db.commit()
 
-        site = db.query(models.ClientSite).filter(models.ClientSite.id == site_id).first()
-        if site:
-            recalculate_health_score(site, db)
+        recalculate_health_score(site, db)
 
         return {"message": "Alerte archivée avec succès."}
 

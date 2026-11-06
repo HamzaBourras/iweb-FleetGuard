@@ -11,6 +11,8 @@ Description :
 ===============================================================================
 """
 
+import uuid
+
 from fastapi import Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 from jose import jwt, JWTError
@@ -57,3 +59,44 @@ def get_current_admin(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Session révoquée")
         
     return admin
+
+
+def get_any_site(
+    public_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: models.DashboardAdmin = Depends(get_current_admin),
+):
+    site = db.query(models.ClientSite).filter(
+        models.ClientSite.public_id == str(public_id)
+    ).first()
+    if not site:
+        raise HTTPException(
+            status_code=404,
+            detail="Actif introuvable dans la flotte.",
+        )
+    return site
+
+
+def get_active_site(
+    site: models.ClientSite = Depends(get_any_site),
+):
+    if site.deleted_at:
+        raise HTTPException(
+            status_code=404,
+            detail="Actif en corbeille : restaurez-le d'abord.",
+        )
+    return site
+
+
+def require_role(*roles):
+    def checker(
+        admin: models.DashboardAdmin = Depends(get_current_admin),
+    ):
+        if admin.role not in roles:
+            raise HTTPException(
+                status_code=403,
+                detail="Droits insuffisants pour cette action.",
+            )
+        return admin
+
+    return checker

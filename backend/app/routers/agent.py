@@ -35,11 +35,13 @@ async def run_hourly_pings():
     print("🤖 [Scheduler] Lancement du ping léger de tous les sites...")
     db = SessionLocal()
     try:
-        tous_les_sites = db.query(models.ClientSite).all()
+        tous_les_sites = db.query(models.ClientSite).filter(
+            models.ClientSite.deleted_at.is_(None)
+        ).all()
         for site in tous_les_sites:
             try:
                 # On await directement la fonction au lieu de asyncio.run()
-                await ping_site_agent(site_id=site.id, db=db, admin=None)
+                await ping_site_agent(site=site, db=db, admin=None)
             except Exception:
                 pass 
             
@@ -59,7 +61,10 @@ async def run_automated_scans():
     print("🤖 [Scheduler] Vérification des scans automatiques en attente...")
     db = SessionLocal()
     try:
-        sites_to_scan = db.query(models.ClientSite).filter(models.ClientSite.auto_scan_enabled == True).all()
+        sites_to_scan = db.query(models.ClientSite).filter(
+            models.ClientSite.auto_scan_enabled == True,
+            models.ClientSite.deleted_at.is_(None),
+        ).all()
         
         for site in sites_to_scan:
             needs_scan = False
@@ -74,10 +79,10 @@ async def run_automated_scans():
                 print(f"🔄 [Scheduler] Démarrage du scan automatique pour le site #{site.id}...")
                 
                 # Exécution asynchrone native
-                await scan_site(site_id=site.id, admin=None, db=db)
+                await scan_site(site=site, admin=None, db=db)
                 
                 await run_malware_scan(
-                    site_id=site.id, 
+                    site=site,
                     background_tasks=None, 
                     admin=None, 
                     db=db

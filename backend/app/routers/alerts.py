@@ -128,14 +128,15 @@ def get_all_alerts(
     # On fait une jointure entre SecurityAlert et ClientSite
     alerts_query = db.query(
         models.SecurityAlert, 
-        models.ClientSite.site_name
+        models.ClientSite.site_name,
+        models.ClientSite.public_id,
     ).join(
         models.ClientSite, 
         models.SecurityAlert.site_id == models.ClientSite.id
     ).order_by(models.SecurityAlert.timestamp.desc()).all() 
 
     resultats = []
-    for alerte, nom_du_site in alerts_query:
+    for alerte, nom_du_site, site_public_id in alerts_query:
         resultats.append({
             "id": alerte.id,
             "site_name": nom_du_site,
@@ -145,6 +146,7 @@ def get_all_alerts(
             "ip_address": alerte.ip_address,
             "timestamp": alerte.timestamp,
             "site_id": alerte.site_id,
+            "site_public_id": site_public_id,
             "status": alerte.status  
         })
 

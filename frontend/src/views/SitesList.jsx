@@ -463,7 +463,7 @@ export default function SitesList() {
                       </td>
                       <td className="px-4 md:px-6 py-4">
                         {/* On délègue toute la logique à notre nouveau sous-composant autonome */}
-                        <LiveSiteStatus siteId={site.id} isDeleted={isDeleted} />
+                        <LiveSiteStatus siteId={site.public_id} isDeleted={isDeleted} />
                       </td>
 
                       <td className="px-4 md:px-6 py-4 text-right">
@@ -472,7 +472,7 @@ export default function SitesList() {
 
                           {/* ✨ NOUVEAU BOUTON DÉTAILS */}
                           <button
-                            onClick={() => navigate(`/dashboard/sites/${site.id}`)}
+                            onClick={() => navigate(`/dashboard/sites/${site.public_id}`)}
                             className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl shadow-md hover:shadow-lg transition-all group border border-transparent"
                           >
                             <Radar className="w-4 h-4 text-orange-500 group-hover:animate-spin-slow" />
@@ -481,7 +481,7 @@ export default function SitesList() {
 
                           {isDeleted ? (
                             <button
-                              onClick={() => initiateRestore(site.id)}
+                              onClick={() => initiateRestore(site.public_id)}
                               className="inline-flex items-center justify-center gap-1.5 bg-white border border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:shadow-sm p-2 md:px-3 md:py-1.5 rounded-lg text-xs font-bold transition-all"
                               title="Restaurer"
                             >
@@ -490,7 +490,7 @@ export default function SitesList() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => initiateDelete(site.id)}
+                              onClick={() => initiateDelete(site.public_id)}
                               className="inline-flex items-center justify-center gap-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 p-2 md:px-3 md:py-1.5 rounded-lg text-xs font-bold transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
                               title="Supprimer"
                             >

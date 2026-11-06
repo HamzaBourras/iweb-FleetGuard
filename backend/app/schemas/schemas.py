@@ -70,6 +70,7 @@ class SiteOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    public_id: str
     site_name: Optional[str] = None
     url: str
     deleted_at: Optional[datetime] = None

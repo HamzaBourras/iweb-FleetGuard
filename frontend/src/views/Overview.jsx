@@ -169,7 +169,7 @@ export default function Overview() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation(); // Empêche le clic de fermer l'accordéon si on clique très vite
-                            navigate(`/dashboard/sites/${site.id}`);
+                            navigate(`/dashboard/sites/${site.public_id}`);
                           }}
                           className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 transition-colors border border-blue-100 hover:border-blue-200"
                         >
