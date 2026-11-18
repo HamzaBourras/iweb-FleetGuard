@@ -657,9 +657,9 @@ export default function SiteInvestigation() {
           </button>
           <h2 className="text-2xl md:text-3xl font-black text-slate-800 tracking-tight flex items-center gap-3">
             {site.site_name || "Cible Inconnue"}
-            <span className="bg-slate-100 text-slate-500 py-1 px-3 rounded-md text-sm font-mono border border-slate-200">
+            {/* <span className="bg-slate-100 text-slate-500 py-1 px-3 rounded-md text-sm font-mono border border-slate-200">
               #{site.id}
-            </span>
+            </span> */}
           </h2>
           <a href={site.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-700 text-sm md:text-base mt-2 flex items-center gap-2 w-fit group">
             <Globe className="w-4 h-4 group-hover:animate-pulse" /> {site.url}

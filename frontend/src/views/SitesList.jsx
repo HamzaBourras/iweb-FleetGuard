@@ -420,7 +420,7 @@ export default function SitesList() {
           <table className="w-full text-left border-collapse whitespace-nowrap md:whitespace-normal">
             <thead>
               <tr className="bg-slate-50/50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
-                <th className="px-4 md:px-6 py-4 md:py-5 font-semibold">ID</th>
+                <th className="px-4 md:px-6 py-4 md:py-5 font-semibold">N°</th>
                 <th className="px-4 md:px-6 py-4 md:py-5 font-semibold">Nom du Site</th>
                 <th className="px-4 md:px-6 py-4 md:py-5 font-semibold">URL Site</th>
                 <th className="px-4 md:px-6 py-4 md:py-5 font-semibold hidden sm:table-cell">Token Agent</th>
@@ -440,12 +440,13 @@ export default function SitesList() {
                   </td>
                 </tr>
               ) : (
-                currentSites.map((site) => {
+                currentSites.map((site, index) => {
+                  const displayNumber = (sitePage - 1) * sitesPerPage + index + 1;
                   const isDeleted = site.deleted_at !== null;
-
+                  
                   return (
                     <tr key={site.id} className={`group transition-all duration-200 ${isDeleted ? 'bg-red-50/50 opacity-75' : 'hover:bg-slate-50'}`}>
-                      <td className="px-4 md:px-6 py-4 text-slate-400 font-mono text-xs md:text-sm">#{site.id}</td>
+                      <td className="px-4 md:px-6 py-4 text-slate-400 font-mono text-xs md:text-sm">#{displayNumber}</td>
                       <td className={`px-4 md:px-6 py-4 font-bold text-sm md:text-base ${isDeleted ? 'text-red-800/60 line-through' : 'text-slate-800'}`}>
                         {site.site_name}
                       </td>
