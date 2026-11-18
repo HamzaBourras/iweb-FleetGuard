@@ -429,6 +429,18 @@ function iweb_safe_scan_directory( $dir, &$results, $depth = 0 ) {
         
         $path = $dir . '/' . $file;
 
+        // Ne jamais suivre un lien symbolique : on le signale sans le parcourir
+        if ( is_link( $path ) ) {
+            $results[] = [
+                'file' => str_replace( ABSPATH, '', $path ),
+                'threat' => 'Lien symbolique dans uploads (contournement possible)',
+                'severity' => 'critical',
+                'manual_only' => true,
+                'sha256' => null,
+            ];
+            continue;
+        }
+
         if ( is_dir( $path ) ) {
             iweb_safe_scan_directory( $path, $results, $depth + 1 );
         } else {
