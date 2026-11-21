@@ -29,7 +29,7 @@ export default function Guide() {
         </div>
         <div className="flex items-center gap-2 bg-slate-100 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 w-fit">
           <Terminal className="w-4 h-4" />
-          v.2.0 (SecOps Edition)
+          v.3.0 (SecOps Edition)
         </div>
       </div>
 
